@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { getRequests, deleteRequest } from "../api/requests"
 import { useToast } from "../context/ToastContext"
-import type { DeminingRequest } from "../types"
+import type { DeminingRequest, Priority, RequestStatus } from "../types"
 import RequestDetailModal from "../components/RequestDetailModal"
 import NewRequestModal from "../components/NewRequestModal"
 import Spinner from "../components/Spinner"
@@ -12,12 +12,57 @@ import { REQUEST_STATUS, PRIORITY_LABEL } from "../components/constants"
 const fmt = (iso: string) =>
   new Date(iso).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" })
 
-const sel = "border border-white/8 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 transition"
+const sel   = "border border-white/8 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 transition"
 const selbg = { background: "rgba(255,255,255,0.04)" }
+
+// ── Sorting ───────────────────────────────────────────────────
+type SortField = "id" | "title" | "location_name" | "status" | "priority" | "created_at"
+type SortDir   = "asc" | "desc"
+
+const PRIORITY_ORDER: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 }
+const STATUS_ORDER:   Record<string, number> = {
+  pending: 0, under_review: 1, approved: 2, in_progress: 3, completed: 4, rejected: 5,
+}
+
+function sortRequests(list: DeminingRequest[], field: SortField, dir: SortDir) {
+  return [...list].sort((a, b) => {
+    let cmp = 0
+    if      (field === "id")            cmp = a.id - b.id
+    else if (field === "title")         cmp = a.title.localeCompare(b.title, "uk")
+    else if (field === "location_name") cmp = a.location_name.localeCompare(b.location_name, "uk")
+    else if (field === "status")        cmp = STATUS_ORDER[a.status]   - STATUS_ORDER[b.status]
+    else if (field === "priority")      cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+    else if (field === "created_at")    cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    return dir === "asc" ? cmp : -cmp
+  })
+}
+
+// ── SortHeader ────────────────────────────────────────────────
+function SortTh({ label, field, sort, onSort }: {
+  label: string
+  field: SortField
+  sort: { field: SortField; dir: SortDir }
+  onSort: (f: SortField) => void
+}) {
+  const active = sort.field === field
+  return (
+    <th
+      className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap cursor-pointer select-none transition-colors hover:text-amber-400"
+      style={{ color: active ? "#fbbf24" : "#475569" }}
+      onClick={() => onSort(field)}
+    >
+      {label}{" "}
+      <span className="ml-0.5 opacity-70">
+        {active ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </th>
+  )
+}
 
 export default function RequestsPage() {
   const location = useLocation()
   const toast    = useToast()
+
   const [requests,       setRequests]      = useState<DeminingRequest[]>([])
   const [loading,        setLoading]       = useState(true)
   const [search,         setSearch]        = useState("")
@@ -26,6 +71,7 @@ export default function RequestsPage() {
   const [viewing,        setViewing]       = useState<DeminingRequest | null>(null)
   const [showNew,        setShowNew]       = useState(false)
   const [deleting,       setDeleting]      = useState<number | null>(null)
+  const [sort,           setSort]          = useState<{ field: SortField; dir: SortDir }>({ field: "created_at", dir: "desc" })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,14 +89,20 @@ export default function RequestsPage() {
     }
   }, [location.state, requests])
 
-  const filtered = useMemo(() => requests.filter(r => {
-    const q = search.toLowerCase()
-    return (
-      (filterStatus   === "all" || r.status   === filterStatus) &&
-      (filterPriority === "all" || r.priority === filterPriority) &&
-      (r.title.toLowerCase().includes(q) || r.location_name.toLowerCase().includes(q))
-    )
-  }), [requests, search, filterStatus, filterPriority])
+  const handleSort = (field: SortField) =>
+    setSort(prev => ({ field, dir: prev.field === field && prev.dir === "asc" ? "desc" : "asc" }))
+
+  const filtered = useMemo(() => {
+    const base = requests.filter(r => {
+      const q = search.toLowerCase()
+      return (
+        (filterStatus   === "all" || r.status   === filterStatus) &&
+        (filterPriority === "all" || r.priority === filterPriority) &&
+        (r.title.toLowerCase().includes(q) || r.location_name.toLowerCase().includes(q))
+      )
+    })
+    return sortRequests(base, sort.field, sort.dir)
+  }, [requests, search, filterStatus, filterPriority, sort])
 
   const handleDelete = async (id: number) => {
     if (!window.confirm("Видалити заявку?")) return
@@ -65,6 +117,8 @@ export default function RequestsPage() {
       setDeleting(null)
     }
   }
+
+  const sortProps = { sort, onSort: handleSort }
 
   return (
     <div className="flex flex-col gap-5 h-full">
@@ -111,9 +165,13 @@ export default function RequestsPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-white/6" style={{ background: "#0c1220" }}>
                   <tr>
-                    {["#", "Назва", "Локація", "Статус", "Пріоритет", "Дата", ""].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">{h}</th>
-                    ))}
+                    <SortTh label="#"         field="id"            {...sortProps} />
+                    <SortTh label="Назва"     field="title"         {...sortProps} />
+                    <SortTh label="Локація"   field="location_name" {...sortProps} />
+                    <SortTh label="Статус"    field="status"        {...sortProps} />
+                    <SortTh label="Пріоритет" field="priority"      {...sortProps} />
+                    <SortTh label="Дата"      field="created_at"    {...sortProps} />
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -146,13 +204,8 @@ export default function RequestsPage() {
         }
       </div>
 
-      {viewing && (
-        <RequestDetailModal
-          request={viewing}
-          onClose={() => setViewing(null)}
-        />
-      )}
-      {showNew && (
+      {viewing && <RequestDetailModal request={viewing} onClose={() => setViewing(null)} />}
+      {showNew  && (
         <NewRequestModal
           onClose={() => setShowNew(false)}
           onCreated={r => { setRequests(p => [r, ...p]); setShowNew(false) }}

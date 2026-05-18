@@ -21,23 +21,28 @@ async def notify_request_updated(
     request_id: int,
     title: str,
     location_name: str,
-    assignee_name: str | None,
     status: str,
+    assignee_name: str | None = None,
+    brigade_name:  str | None = None,
 ) -> None:
-    assignee_line = assignee_name or "не призначено"
     status_map = {
-        "pending": "Очікує",
-        "under_review": "На розгляді",
-        "approved": "Затверджено",
-        "in_progress": "Виконується",
-        "completed": "Завершено",
-        "rejected": "Відхилено",
+        "pending":      "⏳ Очікує",
+        "under_review": "🔍 На розгляді",
+        "approved":     "✅ Затверджено",
+        "in_progress":  "🔧 Виконується",
+        "completed":    "✔️ Завершено",
+        "rejected":     "❌ Відхилено",
     }
     status_label = status_map.get(status, status)
-    text = (
-        f"📋 Заявка #{request_id}: {title}\n"
-        f"📍 {location_name}\n"
-        f"👤 Призначено: {assignee_line}\n"
-        f"🔄 Статус: {status_label}"
-    )
-    await send_notification(text)
+
+    lines = [
+        f"📋 <b>Заявка #{request_id}</b>: {title}",
+        f"📍 {location_name}",
+        f"🔄 Статус: {status_label}",
+    ]
+    if assignee_name:
+        lines.append(f"👤 Оператор: {assignee_name}")
+    if brigade_name:
+        lines.append(f"🪖 Бригада: {brigade_name}")
+
+    await send_notification("\n".join(lines))

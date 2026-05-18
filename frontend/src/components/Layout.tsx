@@ -3,16 +3,17 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { ROLE_LABEL } from "./constants"
 
-const NAV = [
-  { to: "/",            label: "Карта",       icon: "▦" },
-  { to: "/requests",    label: "Заявки",      icon: "≡" },
-  { to: "/territories", label: "Території",   icon: "◉" },
+const BASE_NAV = [
+  { to: "/",         label: "Карта",   icon: "▦", roles: null },
+  { to: "/requests", label: "Заявки",  icon: "≡", roles: null },
+  { to: "/brigades", label: "Бригади", icon: "🪖", roles: ["operator", "coordinator", "admin"] },
 ]
 
 export default memo(function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const isStaff  = user?.role === "admin" || user?.role === "coordinator"
+  const nav = BASE_NAV.filter(n => !n.roles || n.roles.includes(user?.role ?? ""))
 
   const cls = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -41,7 +42,7 @@ export default memo(function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 p-3 flex flex-col gap-0.5">
-          {NAV.map(n => (
+          {nav.map(n => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} className={cls}>
               <span className="text-base w-5 text-center opacity-70">{n.icon}</span>
               {n.label}

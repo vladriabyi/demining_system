@@ -8,6 +8,7 @@ export interface RequestCreate {
   location_name: string
   latitude: number
   longitude: number
+  phone?: string
 }
 
 export interface RequestUpdate {
@@ -16,6 +17,8 @@ export interface RequestUpdate {
   status?: RequestStatus
   priority?: Priority
   assigned_to_id?: number | null
+  brigade_id?: number | null
+  comment?: string
 }
 
 export const getRequests      = () => client.get<DeminingRequest[]>("/requests/").then(r => r.data)
@@ -32,3 +35,18 @@ export const uploadPhoto = async (id: number, file: File): Promise<DeminingReque
     headers: { "Content-Type": "multipart/form-data" },
   }).then(r => r.data)
 }
+
+export interface ReportCreate {
+  explosive_type_found:  string
+  quantity:              number
+  area_cleared_m2?:      number
+  time_spent_hours?:     number
+  neutralization_method: string
+  notes?:                string
+}
+
+export const submitReport = (id: number, data: ReportCreate) =>
+  client.post<CompletionReport>(`/requests/${id}/report`, data).then(r => r.data)
+
+export const getReport = (id: number) =>
+  client.get<CompletionReport>(`/requests/${id}/report`).then(r => r.data)

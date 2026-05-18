@@ -14,27 +14,74 @@ const fmt = (iso: string) =>
 
 const ROLES: UserRole[] = ["civilian", "operator", "coordinator", "admin"]
 
+// ── Sorting ───────────────────────────────────────────────────
+type SortDir = "asc" | "desc"
+
+type ReqSortField = "id" | "title" | "requester" | "status" | "priority" | "assignee" | "created_at"
+type UsrSortField = "id" | "full_name" | "email" | "role" | "is_active" | "request_count"
+
+const PRIORITY_ORDER: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 }
+const STATUS_ORDER:   Record<string, number> = {
+  pending: 0, under_review: 1, approved: 2, in_progress: 3, completed: 4, rejected: 5,
+}
+const ROLE_ORDER: Record<string, number> = { civilian: 0, operator: 1, coordinator: 2, admin: 3 }
+
+function sortRequests(list: DeminingRequest[], field: ReqSortField, dir: SortDir): DeminingRequest[] {
+  return [...list].sort((a, b) => {
+    let cmp = 0
+    if      (field === "id")         cmp = a.id - b.id
+    else if (field === "title")      cmp = a.title.localeCompare(b.title, "uk")
+    else if (field === "requester")  cmp = (a.requester?.full_name ?? "").localeCompare(b.requester?.full_name ?? "", "uk")
+    else if (field === "status")     cmp = STATUS_ORDER[a.status]    - STATUS_ORDER[b.status]
+    else if (field === "priority")   cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+    else if (field === "assignee")   cmp = (a.assignee?.full_name ?? "").localeCompare(b.assignee?.full_name ?? "", "uk")
+    else if (field === "created_at") cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    return dir === "asc" ? cmp : -cmp
+  })
+}
+
+function sortUsers(list: User[], field: UsrSortField, dir: SortDir, reqCounts: Record<number, number>): User[] {
+  return [...list].sort((a, b) => {
+    let cmp = 0
+    if      (field === "id")            cmp = a.id - b.id
+    else if (field === "full_name")     cmp = a.full_name.localeCompare(b.full_name, "uk")
+    else if (field === "email")         cmp = a.email.localeCompare(b.email)
+    else if (field === "role")          cmp = ROLE_ORDER[a.role]  - ROLE_ORDER[b.role]
+    else if (field === "is_active")     cmp = Number(a.is_active) - Number(b.is_active)
+    else if (field === "request_count") cmp = (reqCounts[a.id] ?? 0) - (reqCounts[b.id] ?? 0)
+    return dir === "asc" ? cmp : -cmp
+  })
+}
+
+function SortTh<F extends string>({ label, field, sort, onSort, className = "" }: {
+  label: string; field: F; sort: { field: F; dir: SortDir }; onSort: (f: F) => void; className?: string
+}) {
+  const active = sort.field === field
+  return (
+    <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap cursor-pointer select-none hover:text-amber-400 transition-colors ${className}`}
+      style={{ color: active ? "#fbbf24" : "#475569" }}
+      onClick={() => onSort(field)}>
+      {label} <span className="ml-0.5 opacity-70">{active ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}</span>
+    </th>
+  )
+}
+
+// ── EditUserModal ─────────────────────────────────────────────
 function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () => void; onUpdated: (u: User) => void }) {
   const toast = useToast()
-  const [role,     setRole]     = useState<UserRole>(user.role)
+  const [role, setRole]         = useState<UserRole>(user.role)
   const [isActive, setIsActive] = useState(user.is_active)
-  const [saving,   setSaving]   = useState(false)
+  const [saving, setSaving]     = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
-    try {
-      const updated = await updateUser(user.id, { role, is_active: isActive })
-      toast.success("Користувача оновлено")
-      onUpdated(updated)
-    } catch {
-      toast.error("Помилка збереження")
-    } finally {
-      setSaving(false)
-    }
+    try { const u = await updateUser(user.id, { role, is_active: isActive }); toast.success("Оновлено"); onUpdated(u) }
+    catch { toast.error("Помилка збереження") }
+    finally { setSaving(false) }
   }
 
-  const sel = "w-full rounded-xl border border-white/8 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 transition"
-  const selbg = { background: "rgba(255,255,255,0.04)" }
+  const s  = "w-full rounded-xl border border-white/8 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 transition"
+  const sb = { background: "rgba(255,255,255,0.04)" }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
@@ -47,22 +94,20 @@ function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () =
         <div className="p-6 flex flex-col gap-4">
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Роль</label>
-            <select className={sel} style={selbg} value={role} onChange={e => setRole(e.target.value as UserRole)}>
+            <select className={s} style={sb} value={role} onChange={e => setRole(e.target.value as UserRole)}>
               {ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
           </div>
           <div className="flex items-center justify-between rounded-xl px-4 py-3 border border-white/6" style={{ background: "rgba(255,255,255,0.03)" }}>
             <span className="text-sm text-slate-300">Активний акаунт</span>
             <button onClick={() => setIsActive(v => !v)}
-              className={`relative w-11 h-6 rounded-full transition-colors ${isActive ? "" : "bg-slate-700"}`}
-              style={isActive ? { background: "#fbbf24" } : {}}>
+              className="relative w-11 h-6 rounded-full transition-colors"
+              style={{ background: isActive ? "#fbbf24" : "#334155" }}>
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isActive ? "translate-x-5" : ""}`} />
             </button>
           </div>
           <div className="flex gap-2 pt-1">
-            <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold text-slate-400 hover:text-white rounded-xl border border-white/8 hover:bg-white/5 transition">
-              Скасувати
-            </button>
+            <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold text-slate-400 rounded-xl border border-white/8 hover:bg-white/5 transition">Скасувати</button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 text-sm font-bold text-slate-900 rounded-xl disabled:opacity-50 transition"
               style={{ background: saving ? "#92400e" : "#fbbf24" }}>
@@ -78,46 +123,60 @@ function EditUserModal({ user, onClose, onUpdated }: { user: User; onClose: () =
 type Tab = "requests" | "stats" | "users"
 
 export default function AdminPage() {
-  const [requests,     setRequests]     = useState<DeminingRequest[]>([])
-  const [users,        setUsers]        = useState<User[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [search,       setSearch]       = useState("")
-  const [filterStatus, setFilterStatus] = useState("all")
+  const [requests,       setRequests]       = useState<DeminingRequest[]>([])
+  const [users,          setUsers]          = useState<User[]>([])
+  const [loading,        setLoading]        = useState(true)
+  const [search,         setSearch]         = useState("")
+  const [filterStatus,   setFilterStatus]   = useState("all")
   const [filterPriority, setFilterPriority] = useState("all")
-  const [editReq,      setEditReq]      = useState<DeminingRequest | null>(null)
-  const [editUser,     setEditUser]     = useState<User | null>(null)
-  const [tab,          setTab]          = useState<Tab>("requests")
+  const [editReq,        setEditReq]        = useState<DeminingRequest | null>(null)
+  const [editUser,       setEditUser]       = useState<User | null>(null)
+  const [tab,            setTab]            = useState<Tab>("requests")
+
+  const [reqSort, setReqSort] = useState<{ field: ReqSortField; dir: SortDir }>({ field: "created_at", dir: "desc" })
+  const [usrSort, setUsrSort] = useState<{ field: UsrSortField; dir: SortDir }>({ field: "id", dir: "asc" })
+
+  const handleReqSort = (field: ReqSortField) =>
+    setReqSort(prev => ({ field, dir: prev.field === field && prev.dir === "asc" ? "desc" : "asc" }))
+  const handleUsrSort = (field: UsrSortField) =>
+    setUsrSort(prev => ({ field, dir: prev.field === field && prev.dir === "asc" ? "desc" : "asc" }))
 
   const load = useCallback(async () => {
     setLoading(true)
-    try {
-      const [reqs, usrs] = await Promise.all([getRequests(), getUsers()])
-      setRequests(reqs); setUsers(usrs)
-    } finally { setLoading(false) }
+    try { const [reqs, usrs] = await Promise.all([getRequests(), getUsers()]); setRequests(reqs); setUsers(usrs) }
+    finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const filtered = useMemo(() => requests.filter(r => {
-    const q = search.toLowerCase()
-    return (
-      (filterStatus   === "all" || r.status   === filterStatus) &&
-      (filterPriority === "all" || r.priority === filterPriority) &&
-      (r.title.toLowerCase().includes(q) || r.location_name.toLowerCase().includes(q))
-    )
-  }), [requests, search, filterStatus, filterPriority])
+  const reqCounts = useMemo(() => {
+    const map: Record<number, number> = {}
+    requests.forEach(r => { map[r.requester_id] = (map[r.requester_id] ?? 0) + 1 })
+    return map
+  }, [requests])
 
-  const statusChart   = useMemo(() => Object.entries(REQUEST_STATUS).map(([k, v]) => ({
-    name: v.label, value: requests.filter(r => r.status === k).length, color: v.color,
-  })), [requests])
+  const filtered = useMemo(() => {
+    const base = requests.filter(r => {
+      const q = search.toLowerCase()
+      return (
+        (filterStatus   === "all" || r.status   === filterStatus) &&
+        (filterPriority === "all" || r.priority === filterPriority) &&
+        (r.title.toLowerCase().includes(q) || r.location_name?.toLowerCase().includes(q) || r.requester?.full_name?.toLowerCase().includes(q))
+      )
+    })
+    return sortRequests(base, reqSort.field, reqSort.dir)
+  }, [requests, search, filterStatus, filterPriority, reqSort])
 
-  const priorityChart = useMemo(() => Object.entries(PRIORITY_LABEL).map(([k, v]) => ({
-    name: v, value: requests.filter(r => r.priority === k).length, color: PRIORITY_COLOR[k as keyof typeof PRIORITY_COLOR],
-  })), [requests])
+  const sortedUsers = useMemo(() =>
+    sortUsers(users, usrSort.field, usrSort.dir, reqCounts),
+    [users, usrSort, reqCounts]
+  )
+
+  const statusChart   = useMemo(() => Object.entries(REQUEST_STATUS).map(([k, v]) => ({ name: v.label, value: requests.filter(r => r.status === k).length, color: v.color })), [requests])
+  const priorityChart = useMemo(() => Object.entries(PRIORITY_LABEL).map(([k, v]) => ({ name: v, value: requests.filter(r => r.priority === k).length, color: PRIORITY_COLOR[k as keyof typeof PRIORITY_COLOR] })), [requests])
 
   const sel   = "border border-white/8 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 transition"
   const selbg = { background: "rgba(255,255,255,0.04)" }
-
   const TABS: [Tab, string][] = [["requests", "📋  Заявки"], ["stats", "📊  Статистика"], ["users", "👥  Користувачі"]]
 
   return (
@@ -127,13 +186,10 @@ export default function AdminPage() {
         <h1 className="text-xl font-extrabold text-white mt-0.5">Адмін-панель</h1>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 w-fit p-1 rounded-xl border border-white/6 shrink-0" style={{ background: "rgba(255,255,255,0.03)" }}>
         {TABS.map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-              tab === key ? "text-slate-900" : "text-slate-500 hover:text-white"
-            }`}
+            className={`px-4 py-2 text-sm font-bold rounded-lg transition ${tab === key ? "text-slate-900" : "text-slate-500 hover:text-white"}`}
             style={tab === key ? { background: "#fbbf24" } : {}}>
             {label}
           </button>
@@ -144,8 +200,7 @@ export default function AdminPage() {
       {tab === "requests" && (
         <>
           <div className="flex gap-2 shrink-0 flex-wrap">
-            <input className={`${sel} flex-1 min-w-40`} style={selbg}
-              placeholder="🔍 Пошук…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input className={`${sel} flex-1 min-w-40`} style={selbg} placeholder="🔍 Пошук…" value={search} onChange={e => setSearch(e.target.value)} />
             <select className={sel} style={selbg} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="all">Всі статуси</option>
               {Object.entries(REQUEST_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -155,15 +210,19 @@ export default function AdminPage() {
               {Object.entries(PRIORITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-
           <div className="flex-1 min-h-0 overflow-auto rounded-2xl border border-white/6" style={{ background: "#0c1220" }}>
             {loading ? <Spinner /> : (
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-white/6" style={{ background: "#0c1220" }}>
                   <tr>
-                    {["#","Назва","Заявник","Статус","Пріоритет","Оператор","Дата",""].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">{h}</th>
-                    ))}
+                    <SortTh label="#"         field="id"         sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Назва"     field="title"      sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Заявник"   field="requester"  sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Статус"    field="status"     sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Пріоритет" field="priority"   sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Оператор"  field="assignee"   sort={reqSort} onSort={handleReqSort} />
+                    <SortTh label="Дата"      field="created_at" sort={reqSort} onSort={handleReqSort} />
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -194,33 +253,25 @@ export default function AdminPage() {
       {/* ── STATS TAB ── */}
       {tab === "stats" && (
         <div className="flex-1 min-h-0 grid grid-cols-2 gap-4 overflow-auto content-start">
-          {[
-            { title: "За статусами",   data: statusChart },
-            { title: "За пріоритетами",data: priorityChart },
-          ].map(({ title, data }) => (
+          {[{ title: "За статусами", data: statusChart }, { title: "За пріоритетами", data: priorityChart }].map(({ title, data }) => (
             <div key={title} className="rounded-2xl border border-white/6 p-5" style={{ background: "#0c1220" }}>
               <p className="text-xs font-bold text-white mb-4">{title}</p>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={data} margin={{ left: -20 }}>
                   <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#64748b" }} />
                   <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontSize: 11 }}
-                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  />
-                  <Bar dataKey="value" radius={[4,4,0,0]}>
-                    {data.map((s, i) => <Cell key={i} fill={s.color} />)}
-                  </Bar>
+                  <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontSize: 11 }} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>{data.map((s, i) => <Cell key={i} fill={s.color} />)}</Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ))}
           <div className="col-span-2 grid grid-cols-4 gap-3">
             {[
-              { label: "Всього заявок", value: requests.length,                                                    color: "#60a5fa" },
+              { label: "Всього заявок", value: requests.length,                                                         color: "#60a5fa" },
               { label: "Відкритих",     value: requests.filter(r => !["completed","rejected"].includes(r.status)).length, color: "#fb923c" },
-              { label: "Завершено",     value: requests.filter(r => r.status === "completed").length,              color: "#4ade80" },
-              { label: "Критичних",     value: requests.filter(r => r.priority === "critical").length,             color: "#f87171" },
+              { label: "Завершено",     value: requests.filter(r => r.status === "completed").length,                   color: "#4ade80" },
+              { label: "Критичних",     value: requests.filter(r => r.priority === "critical").length,                  color: "#f87171" },
             ].map(k => (
               <div key={k.label} className="rounded-2xl border border-white/6 px-4 py-4" style={{ background: "#0c1220" }}>
                 <p className="text-3xl font-extrabold" style={{ color: k.color }}>{k.value}</p>
@@ -238,13 +289,17 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 border-b border-white/6" style={{ background: "#0c1220" }}>
                 <tr>
-                  {["#","Ім'я","Email","Роль","Статус","Заявок",""].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-600 uppercase tracking-widest">{h}</th>
-                  ))}
+                  <SortTh label="#"       field="id"            sort={usrSort} onSort={handleUsrSort} />
+                  <SortTh label="Ім'я"    field="full_name"     sort={usrSort} onSort={handleUsrSort} />
+                  <SortTh label="Email"   field="email"         sort={usrSort} onSort={handleUsrSort} />
+                  <SortTh label="Роль"    field="role"          sort={usrSort} onSort={handleUsrSort} />
+                  <SortTh label="Статус"  field="is_active"     sort={usrSort} onSort={handleUsrSort} />
+                  <SortTh label="Заявок"  field="request_count" sort={usrSort} onSort={handleUsrSort} />
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {sortedUsers.map(u => (
                   <tr key={u.id} className="border-b border-white/4 hover:bg-white/3 transition-colors">
                     <td className="px-4 py-3 text-slate-600 text-xs font-mono">#{u.id}</td>
                     <td className="px-4 py-3 text-white font-semibold">{u.full_name}</td>
@@ -260,9 +315,7 @@ export default function AdminPage() {
                         {u.is_active ? "● Активний" : "○ Деактивовано"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {requests.filter(r => r.requester_id === u.id).length}
-                    </td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">{reqCounts[u.id] ?? 0}</td>
                     <td className="px-4 py-3">
                       <button onClick={() => setEditUser(u)}
                         className="px-3 py-1.5 rounded-lg text-xs font-bold text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 transition">
@@ -277,20 +330,8 @@ export default function AdminPage() {
         </div>
       )}
 
-      {editReq && (
-        <AdminRequestModal
-          request={editReq}
-          onClose={() => setEditReq(null)}
-          onUpdated={u => { setRequests(p => p.map(r => r.id === u.id ? u : r)); setEditReq(null) }}
-        />
-      )}
-      {editUser && (
-        <EditUserModal
-          user={editUser}
-          onClose={() => setEditUser(null)}
-          onUpdated={u => { setUsers(p => p.map(x => x.id === u.id ? u : x)); setEditUser(null) }}
-        />
-      )}
+      {editReq  && <AdminRequestModal request={editReq} onClose={() => setEditReq(null)} onUpdated={u => { setRequests(p => p.map(r => r.id === u.id ? u : r)); setEditReq(null) }} />}
+      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onUpdated={u => { setUsers(p => p.map(x => x.id === u.id ? u : x)); setEditUser(null) }} />}
     </div>
   )
 }

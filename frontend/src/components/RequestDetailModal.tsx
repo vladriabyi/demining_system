@@ -1,10 +1,14 @@
-import { memo } from "react"
-import type { DeminingRequest } from "../types"
+import { memo, useState, useEffect } from "react"
+import { getReport, type ReportCreate } from "../api/requests"
+import { useAuth } from "../context/AuthContext"
+import type { DeminingRequest, CompletionReport } from "../types"
 import { StatusBadge, PriorityBadge } from "./StatusBadge"
+import CompletionReportModal from "./CompletionReportModal"
 
 interface Props {
   request: DeminingRequest
   onClose: () => void
+  onStatusChanged?: () => void
 }
 
 const fmt = (iso: string) =>
@@ -34,7 +38,20 @@ function RequestPhoto({ path }: { path: string | null | undefined }) {
   )
 }
 
-export default memo(function RequestDetailModal({ request: r, onClose }: Props) {
+export default memo(function RequestDetailModal({ request: r, onClose, onStatusChanged }: Props) {
+  const { user } = useAuth()
+  const isStaff  = user?.role && ["operator","coordinator","admin"].includes(user.role)
+  const canComplete = isStaff && ["in_progress","approved"].includes(r.status)
+
+  const [showReport,       setShowReport]       = useState(false)
+  const [completionReport, setCompletionReport] = useState<CompletionReport | null>(null)
+
+  useEffect(() => {
+    if (r.status === "completed") {
+      getReport(r.id).then(setCompletionReport).catch(() => {})
+    }
+  }, [r.id, r.status])
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
@@ -87,14 +104,51 @@ export default memo(function RequestDetailModal({ request: r, onClose }: Props) 
           </div>
         </div>
 
-        <div className="px-6 pb-5 shrink-0">
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 text-sm font-semibold text-slate-400 hover:text-white rounded-xl transition border border-white/8 hover:bg-white/5"
-          >
+        {/* Completion report display */}
+        {completionReport && (
+          <div className="mx-6 mb-4 rounded-xl border border-emerald-500/20 p-4" style={{ background: "rgba(74,222,128,0.05)" }}>
+            <p className="text-[10px] text-emerald-500 uppercase tracking-widest font-bold mb-3">✅ Завершальний звіт</p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                ["Тип боєприпасу", completionReport.explosive_type_found],
+                ["Кількість", `${completionReport.quantity} шт.`],
+                ["Метод", completionReport.neutralization_method],
+                ["Сапер",  completionReport.submitter?.full_name ?? `ID ${completionReport.submitted_by}`],
+                ...(completionReport.area_cleared_m2  ? [["Площа", `${completionReport.area_cleared_m2} м²`]] : []),
+                ...(completionReport.time_spent_hours ? [["Час роботи", `${completionReport.time_spent_hours} год.`]] : []),
+              ].map(([k,v]) => (
+                <div key={k} className="bg-white/3 rounded-lg px-2.5 py-2">
+                  <p className="text-[9px] text-slate-600 uppercase tracking-widest">{k}</p>
+                  <p className="text-xs text-slate-200 font-medium mt-0.5">{v}</p>
+                </div>
+              ))}
+            </div>
+            {completionReport.notes && (
+              <p className="text-xs text-slate-400 mt-3 leading-relaxed">📝 {completionReport.notes}</p>
+            )}
+          </div>
+        )}
+
+        <div className="px-6 pb-5 shrink-0 flex flex-col gap-2">
+          {canComplete && (
+            <button onClick={() => setShowReport(true)}
+              className="w-full py-2.5 text-sm font-bold rounded-xl transition"
+              style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
+              ✅ Завершити та подати звіт
+            </button>
+          )}
+          <button onClick={onClose}
+            className="w-full py-2.5 text-sm font-semibold text-slate-400 hover:text-white rounded-xl transition border border-white/8 hover:bg-white/5">
             Закрити
           </button>
         </div>
+        {showReport && (
+          <CompletionReportModal
+            request={r}
+            onClose={() => setShowReport(false)}
+            onCompleted={() => { setShowReport(false); onClose(); onStatusChanged?.() }}
+          />
+        )}
       </div>
     </div>
   )

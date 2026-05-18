@@ -9,12 +9,19 @@ class UserCreate(BaseModel):
     password: str
 
 
-class UserOut(BaseModel):
-    id: int
-    email: str
+class UserRegister(BaseModel):
+    email:     EmailStr
     full_name: str
-    role: UserRole
-    is_active: bool
+    password:  str
+
+
+class UserOut(BaseModel):
+    id:          int
+    email:       str
+    full_name:   str
+    role:        UserRole
+    is_active:   bool
+    is_verified: bool = False
 
     model_config = {"from_attributes": True}
 

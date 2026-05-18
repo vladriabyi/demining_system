@@ -1,8 +1,9 @@
 import { memo, useEffect, useState } from "react"
-import { updateRequest } from "../api/requests"
+import { updateRequest, type RequestUpdate } from "../api/requests"
 import { getUsers } from "../api/users"
+import { getBrigades, updateBrigade } from "../api/brigades"
 import { useToast } from "../context/ToastContext"
-import type { DeminingRequest, Priority, RequestStatus, User } from "../types"
+import type { Brigade, DeminingRequest, Priority, RequestStatus, User } from "../types"
 import { REQUEST_STATUS, PRIORITY_LABEL } from "./constants"
 
 interface Props { request: DeminingRequest; onClose: () => void; onUpdated: (r: DeminingRequest) => void }
@@ -10,26 +11,68 @@ interface Props { request: DeminingRequest; onClose: () => void; onUpdated: (r: 
 const sel = "w-full rounded-xl border border-white/8 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 transition"
 const bg  = { background: "rgba(255,255,255,0.04)" }
 
+const BRIGADE_STATUS_LABEL: Record<string, string> = {
+  available:   "Вільна",
+  busy:        "В роботі",
+  unavailable: "Недоступна",
+}
+
 export default memo(function AdminRequestModal({ request: r, onClose, onUpdated }: Props) {
   const toast = useToast()
   const [status,     setStatus]     = useState<RequestStatus>(r.status)
   const [priority,   setPriority]   = useState<Priority>(r.priority)
   const [assignedTo, setAssignedTo] = useState<number | null>(r.assigned_to_id ?? null)
+  const [brigadeId,  setBrigadeId]  = useState<number | null>(r.brigade_id ?? null)
   const [operators,  setOperators]  = useState<User[]>([])
+  const [brigades,   setBrigades]   = useState<Brigade[]>([])
   const [loading,    setLoading]    = useState(false)
 
   useEffect(() => {
-    getUsers().then(users => setOperators(users.filter(u => u.role === "operator" || u.role === "coordinator" || u.role === "admin")))
+    getUsers().then(users => setOperators(users.filter(u => u.role !== "civilian")))
+    getBrigades().then(setBrigades)
   }, [])
 
   const handleSave = async () => {
     setLoading(true)
     try {
-      const updated = await updateRequest(r.id, { status, priority, assigned_to_id: assignedTo })
+      // Відправляємо тільки змінені поля, щоб не порушувати валідацію переходів статусів
+      const changes: Record<string, unknown> = {}
+      if (status        !== r.status)         changes.status         = status
+      if (priority      !== r.priority)        changes.priority       = priority
+      if (assignedTo    !== r.assigned_to_id)  changes.assigned_to_id = assignedTo
+      if (brigadeId     !== (r.brigade_id ?? null)) changes.brigade_id = brigadeId
+
+      if (Object.keys(changes).length === 0) {
+        toast.success("Немає змін")
+        onUpdated(r)
+        return
+      }
+
+      const updated = await updateRequest(r.id, changes as RequestUpdate)
+
+      // Оновлюємо статус бригад якщо змінилось призначення
+      if ("brigade_id" in changes) {
+        const newBrigadeId = brigadeId
+        const oldBrigadeId = r.brigade_id ?? null
+
+        // Нова бригада призначена — ставимо "В роботі"
+        if (newBrigadeId && newBrigadeId !== oldBrigadeId) {
+          const newBrigade = brigades.find(b => b.id === newBrigadeId)
+          if (newBrigade?.status === "available") {
+            try { await updateBrigade(newBrigadeId, { status: "busy" }) } catch {}
+          }
+        }
+        // Стара бригада знята — ставимо "Вільна"
+        if (oldBrigadeId && oldBrigadeId !== newBrigadeId) {
+          try { await updateBrigade(oldBrigadeId, { status: "available" }) } catch {}
+        }
+      }
+
       toast.success("Заявку оновлено")
       onUpdated(updated)
-    } catch {
-      toast.error("Помилка збереження")
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      toast.error(detail ? `Помилка: ${detail}` : "Помилка збереження")
     } finally {
       setLoading(false)
     }
@@ -53,12 +96,14 @@ export default memo(function AdminRequestModal({ request: r, onClose, onUpdated 
               {Object.entries(REQUEST_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
           </div>
+
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Пріоритет</label>
             <select className={sel} style={bg} value={priority} onChange={e => setPriority(e.target.value as Priority)}>
               {Object.entries(PRIORITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
+
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Призначити оператора</label>
             <select className={sel} style={bg} value={assignedTo ?? ""} onChange={e => setAssignedTo(e.target.value ? Number(e.target.value) : null)}>
@@ -67,13 +112,28 @@ export default memo(function AdminRequestModal({ request: r, onClose, onUpdated 
             </select>
           </div>
 
-          <div className="rounded-xl px-3 py-2.5 text-xs text-slate-500 space-y-1" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div>
+            <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Призначити бригаду</label>
+            <select className={sel} style={bg} value={brigadeId ?? ""} onChange={e => setBrigadeId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">— Не призначено —</option>
+              {brigades.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.number}) · {BRIGADE_STATUS_LABEL[b.status]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-xl px-3 py-2.5 text-xs text-slate-500 space-y-1"
+            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <p>📍 {r.location_name}</p>
             <p>👤 Заявник: {r.requester?.full_name ?? `ID ${r.requester_id}`}</p>
+            {r.phone && <p>📞 <a href={`tel:${r.phone}`} className="text-amber-400 hover:underline">{r.phone}</a></p>}
           </div>
 
           <div className="flex gap-3">
-            <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold text-slate-400 hover:text-white rounded-xl border border-white/8 hover:bg-white/5 transition">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold text-slate-400 hover:text-white rounded-xl border border-white/8 hover:bg-white/5 transition">
               Скасувати
             </button>
             <button onClick={handleSave} disabled={loading}

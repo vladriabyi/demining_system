@@ -9,7 +9,7 @@ from app.models.request import (
     RequestStatusHistory, VALID_TRANSITIONS
 )
 from app.models.user import User, UserRole
-from app.models.territory import Territory
+from app.models.brigade import Brigade
 from app.schemas.request import RequestCreate, RequestUpdate
 
 
@@ -21,6 +21,7 @@ def _q():
         selectinload(DeminingRequest.requester),
         selectinload(DeminingRequest.assignee),
         selectinload(DeminingRequest.status_history),
+        selectinload(DeminingRequest.brigade),  # потрібно для Telegram notify
     )
 
 
@@ -148,7 +149,7 @@ async def update(
     if "assigned_to_id" in changes and changes["assigned_to_id"] is not None:
         await _validate_assignee(db, changes["assigned_to_id"])
 
-    should_notify = "assigned_to_id" in changes or "status" in changes
+    should_notify = "assigned_to_id" in changes or "status" in changes or "brigade_id" in changes
 
     for k, v in changes.items():
         setattr(req, k, v)
@@ -160,14 +161,77 @@ async def update(
     if should_notify and refreshed:
         from app.core.telegram import notify_request_updated
         assignee_name = refreshed.assignee.full_name if refreshed.assignee else None
+        brigade_name  = refreshed.brigade.name       if refreshed.brigade  else None
         await notify_request_updated(
             request_id=refreshed.id,
             title=refreshed.title,
             location_name=refreshed.location_name,
             assignee_name=assignee_name,
+            brigade_name=brigade_name,
             status=refreshed.status.value,
         )
+        # Email до заявника при зміні статусу
+        if "status" in changes and refreshed.requester:
+            try:
+                from app.core.email import send_status_change_email
+                await send_status_change_email(
+                    to=refreshed.requester.email,
+                    to_name=refreshed.requester.full_name,
+                    request_id=refreshed.id,
+                    request_title=refreshed.title,
+                    location=refreshed.location_name,
+                    status=refreshed.status.value,
+                )
+            except Exception:
+                pass
 
+    return refreshed
+
+
+async def force_complete(
+    db: AsyncSession,
+    req: "DeminingRequest",
+    current_user_id: int,
+    comment: str = "Завершальний звіт подано сапером",
+) -> "DeminingRequest":
+    """Примусово завершує заявку (для звіту сапера), оминаючи стандартну перевірку переходів."""
+    old_status = req.status.value
+    req.status = RequestStatus.completed
+    await db.commit()
+
+    await _log_status_change(
+        db, req.id,
+        old_status=old_status,
+        new_status=RequestStatus.completed,
+        changed_by_id=current_user_id,
+        comment=comment,
+    )
+
+    refreshed = await get_by_id(db, req.id)
+    if refreshed:
+        from app.core.telegram import notify_request_updated
+        from app.core.email import send_completion_report_email
+        assignee_name = refreshed.assignee.full_name if refreshed.assignee else None
+        brigade_name  = refreshed.brigade.name       if refreshed.brigade  else None
+        await notify_request_updated(
+            request_id=refreshed.id,
+            title=refreshed.title,
+            location_name=refreshed.location_name,
+            assignee_name=assignee_name,
+            brigade_name=brigade_name,
+            status="completed",
+        )
+        if refreshed.requester:
+            try:
+                await send_completion_report_email(
+                    to=refreshed.requester.email,
+                    to_name=refreshed.requester.full_name,
+                    request_id=refreshed.id,
+                    request_title=refreshed.title,
+                    location=refreshed.location_name,
+                )
+            except Exception:
+                pass
     return refreshed
 
 
@@ -259,8 +323,8 @@ async def get_dashboard_stats(db: AsyncSession) -> dict:
 
     row = (await db.execute(stats_sql)).mappings().one()
 
-    total_territories = await db.scalar(
-        select(func.count(Territory.id))
+    total_brigades = await db.scalar(
+        select(func.count(Brigade.id))
     ) or 0
 
     return {
@@ -269,5 +333,5 @@ async def get_dashboard_stats(db: AsyncSession) -> dict:
         "in_progress_requests": int(row["in_progress_requests"]),
         "completed_requests":   int(row["completed_requests"]),
         "critical_requests":    int(row["critical_requests"]),
-        "total_territories":    total_territories,
+        "total_brigades":       total_brigades,
     }

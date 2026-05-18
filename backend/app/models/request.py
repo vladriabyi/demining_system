@@ -25,11 +25,6 @@ class Priority(str, enum.Enum):
 
 
 class ExplosiveType(str, enum.Enum):
-    """
-    Тип вибухонебезпечного предмету.
-    Відповідає класифікації IMAS (International Mine Action Standards).
-    Описано у підрозділі 1.1.1 пояснювальної записки.
-    """
     antipersonnel_mine  = "antipersonnel_mine"
     antitank_mine       = "antitank_mine"
     cluster_munition    = "cluster_munition"
@@ -38,8 +33,6 @@ class ExplosiveType(str, enum.Enum):
     unknown             = "unknown"
 
 
-# Дозволені переходи між статусами — реалізація 6-етапного
-# життєвого циклу заявки (підрозділ 1.1.2 пояснювальної записки)
 VALID_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
     RequestStatus.pending:      {RequestStatus.under_review, RequestStatus.rejected},
     RequestStatus.under_review: {RequestStatus.approved,     RequestStatus.rejected},
@@ -61,26 +54,27 @@ class DeminingRequest(Base):
     explosive_type: Mapped[ExplosiveType] = mapped_column(PgEnum(ExplosiveType), default=ExplosiveType.unknown)
     location_name:  Mapped[str]           = mapped_column(String(255), nullable=False)
 
-    # Числові координати — основний інтерфейс для Leaflet та API
     latitude:       Mapped[float]         = mapped_column(Float, nullable=False)
     longitude:      Mapped[float]         = mapped_column(Float, nullable=False)
 
-    # PostGIS geometry — для просторових запитів
-    # SRID 4326 = WGS-84, стандарт GPS-координат
     location:       Mapped[object | None] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326),
         nullable=True,
-        comment="PostGIS POINT у WGS-84. Автоматично обчислюється з latitude/longitude."
     )
 
     photo_path:     Mapped[str | None]    = mapped_column(String(512), nullable=True)
+    phone:          Mapped[str | None]    = mapped_column(String(30), nullable=True)
     requester_id:   Mapped[int]           = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_to_id: Mapped[int | None]    = mapped_column(ForeignKey("users.id"), nullable=True)
+    brigade_id:     Mapped[int | None]    = mapped_column(ForeignKey("brigades.id", ondelete="SET NULL"), nullable=True)
+
     created_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=datetime.utcnow)
 
     requester:      Mapped["User"]        = relationship("User", foreign_keys=[requester_id],   back_populates="requests")
+    completion_report: Mapped["CompletionReport | None"] = relationship("CompletionReport", back_populates="request", uselist=False, lazy="selectin")
     assignee:       Mapped["User | None"] = relationship("User", foreign_keys=[assigned_to_id], back_populates="assigned")
+    brigade:        Mapped["Brigade | None"] = relationship("Brigade", back_populates="requests", foreign_keys=[brigade_id])
     status_history: Mapped[list["RequestStatusHistory"]] = relationship(
         "RequestStatusHistory", back_populates="request",
         order_by="RequestStatusHistory.changed_at"
@@ -88,11 +82,6 @@ class DeminingRequest(Base):
 
 
 class RequestStatusHistory(Base):
-    """
-    Журнал змін статусів заявки (audit log).
-    Забезпечує повну трасованість процесу обробки заявки —
-    відповідає вимогам підрозділу 1.1.2 пояснювальної записки.
-    """
     __tablename__ = "request_status_history"
 
     id:         Mapped[int]      = mapped_column(primary_key=True)

@@ -1,14 +1,18 @@
 FROM node:20-alpine
 WORKDIR /app
 
-# Спочатку копіюємо залежності окремо — кешування шарів Docker
+# Копіюємо залежності
 COPY package*.json ./
+
+# Встановлюємо залежності (ігноруємо node_modules з хосту)
 RUN npm install
 
-# Копіюємо весь вихідний код
+# Копіюємо вихідний код (без node_modules — вони вже є)
 COPY . .
+
+# Видаляємо node_modules якщо скопіювались з хосту, використовуємо свіжі
+RUN rm -rf node_modules && npm install
 
 EXPOSE 5173
 
-# --host 0.0.0.0 — обов'язково щоб Vite був доступний поза контейнером
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

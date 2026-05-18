@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 from app.models.request import RequestStatus, Priority, ExplosiveType
@@ -12,27 +12,20 @@ class RequestCreate(BaseModel):
     location_name:  str
     latitude:       float
     longitude:      float
-    # priority навмисно відсутній — встановлюється оператором
-    # на етапі класифікації (стадія 3 життєвого циклу, підрозділ 1.1.2)
+    phone:          Optional[str]         = None
 
     @field_validator("latitude")
     @classmethod
     def validate_latitude(cls, v: float) -> float:
         if not (44.0 <= v <= 53.0):
-            raise ValueError(
-                f"Широта {v} виходить за межі України (44°–53° пн.ш.). "
-                "Перевірте правильність координат."
-            )
+            raise ValueError(f"Широта {v} виходить за межі України (44°–53° пн.ш.).")
         return v
 
     @field_validator("longitude")
     @classmethod
     def validate_longitude(cls, v: float) -> float:
         if not (22.0 <= v <= 40.0):
-            raise ValueError(
-                f"Довгота {v} виходить за межі України (22°–40° сх.д.). "
-                "Перевірте правильність координат."
-            )
+            raise ValueError(f"Довгота {v} виходить за межі України (22°–40° сх.д.).")
         return v
 
 
@@ -43,7 +36,8 @@ class RequestUpdate(BaseModel):
     priority:       Optional[Priority]      = None
     explosive_type: Optional[ExplosiveType] = None
     assigned_to_id: Optional[int]           = None
-    comment:        Optional[str]           = None  # коментар до зміни статусу
+    brigade_id:     Optional[int]           = None
+    comment:        Optional[str]           = None
 
 
 class StatusHistoryOut(BaseModel):
@@ -58,11 +52,10 @@ class StatusHistoryOut(BaseModel):
 
 
 class NearbyRequestOut(BaseModel):
-    """Результат пошуку заявок поблизу — для виявлення дублікатів."""
     id:            int
     title:         str
     status:        RequestStatus
-    distance_m:    float   # відстань у метрах
+    distance_m:    float
     latitude:      float
     longitude:     float
     location_name: str
@@ -83,10 +76,12 @@ class RequestOut(BaseModel):
     photo_path:     Optional[str]  = None
     requester_id:   int
     assigned_to_id: Optional[int]
+    brigade_id:     Optional[int]  = None
     created_at:     datetime
     updated_at:     datetime
-    requester:      Optional[UserOut]            = None
-    assignee:       Optional[UserOut]            = None
+    phone:          Optional[str]                    = None
+    requester:      Optional[UserOut]                = None
+    assignee:       Optional[UserOut]                = None
     status_history: Optional[List[StatusHistoryOut]] = None
 
     model_config = {"from_attributes": True}
@@ -98,4 +93,4 @@ class DashboardStatsOut(BaseModel):
     in_progress_requests: int
     completed_requests:   int
     critical_requests:    int
-    total_territories:    int
+    total_brigades:       int  # замінено total_territories → total_brigades
