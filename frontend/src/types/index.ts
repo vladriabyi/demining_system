@@ -3,6 +3,15 @@ export type RequestStatus = "pending" | "under_review" | "approved" | "in_progre
 export type Priority      = "low" | "medium" | "high" | "critical"
 export type BrigadeStatus = "available" | "busy" | "unavailable"
 
+// Відповідає ExplosiveType enum на бекенді
+export type ExplosiveType =
+  | "antipersonnel_mine"
+  | "antitank_mine"
+  | "cluster_munition"
+  | "ied"
+  | "unexploded_ordnance"
+  | "unknown"
+
 export interface User {
   id:          number
   email:       string
@@ -17,42 +26,54 @@ export interface CompletionReport {
   request_id:            number
   explosive_type_found:  string
   quantity:              number
-  area_cleared_m2?:      number | null
-  time_spent_hours?:     number | null
+  area_cleared_m2:       number | null
+  time_spent_hours:      number | null
   neutralization_method: string
-  notes?:                string | null
+  notes:                 string | null
   submitted_by:          number
   submitted_at:          string
-  submitter?:            User | null
+  submitter:             User | null
+}
+
+export interface StatusHistoryEntry {
+  id:         number
+  old_status: string
+  new_status: string
+  changed_by: number
+  comment:    string | null
+  changed_at: string
 }
 
 export interface DeminingRequest {
-  id:             number
-  title:          string
-  description?:   string | null
-  status:         RequestStatus
-  priority:       Priority
-  location_name:  string
-  latitude:       number
-  longitude:      number
-  photo_path?:    string | null
-  phone?:         string | null
-  requester_id:   number
-  assigned_to_id?: number | null
-  brigade_id?:    number | null
-  created_at:     string
-  updated_at:     string
-  requester?:     User | null
-  assignee?:      User | null
+  id:                 number
+  title:              string
+  description:        string | null
+  status:             RequestStatus
+  priority:           Priority
+  explosive_type:     ExplosiveType
+  location_name:      string
+  latitude:           number
+  longitude:          number
+  photo_path:         string | null
+  phone:              string | null
+  requester_id:       number
+  assigned_to_id:     number | null
+  brigade_id:         number | null
+  created_at:         string
+  updated_at:         string
+  requester:          User | null
+  assignee:           User | null
+  status_history:     StatusHistoryEntry[] | null
+  completion_report:  CompletionReport | null
 }
 
 export interface Brigade {
-  id:             number
-  name:           string
-  number:         string
-  status:         BrigadeStatus
-  specialization?: string | null
-  members:        User[]
+  id:              number
+  name:            string
+  number:          string
+  status:          BrigadeStatus
+  specialization:  string | null
+  members:         User[]
 }
 
 export interface DashboardStats {

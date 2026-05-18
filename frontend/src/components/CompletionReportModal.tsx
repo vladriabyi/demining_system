@@ -2,15 +2,13 @@ import { memo, useState } from "react"
 import { submitReport, type ReportCreate } from "../api/requests"
 import { useToast } from "../context/ToastContext"
 import type { DeminingRequest } from "../types"
+import { modalInp, modalBg } from "./ui/modalStyles"
 
 interface Props {
   request: DeminingRequest
   onClose: () => void
   onCompleted: () => void
 }
-
-const inp = "w-full rounded-xl border border-white/8 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/50 transition"
-const bg  = { background: "rgba(255,255,255,0.04)" }
 
 const EXPLOSIVE_TYPES = [
   "Протипіхотна міна", "Протитанкова міна", "Артилерійський снаряд",
@@ -83,7 +81,7 @@ export default memo(function CompletionReportModal({ request: r, onClose, onComp
         <div className="p-6 flex flex-col gap-4 overflow-y-auto">
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Тип знайденого боєприпасу *</label>
-            <select className={inp} style={bg} value={explosiveType} onChange={e => setExplosiveType(e.target.value)}>
+            <select className={modalInp} style={modalBg} value={explosiveType} onChange={e => setExplosiveType(e.target.value)}>
               {EXPLOSIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
@@ -91,32 +89,32 @@ export default memo(function CompletionReportModal({ request: r, onClose, onComp
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Кількість (шт.) *</label>
-              <input className={inp} style={bg} type="number" min={1} value={quantity}
+              <input className={modalInp} style={modalBg} type="number" min={1} value={quantity}
                 onChange={e => setQuantity(parseInt(e.target.value) || 1)} />
             </div>
             <div>
               <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Час роботи (год.)</label>
-              <input className={inp} style={bg} type="number" min={0} step={0.5} placeholder="напр. 2.5"
+              <input className={modalInp} style={modalBg} type="number" min={0} step={0.5} placeholder="напр. 2.5"
                 value={timeSpent} onChange={e => setTimeSpent(e.target.value)} />
             </div>
           </div>
 
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Площа розчищена (м²)</label>
-            <input className={inp} style={bg} type="number" min={0} placeholder="необов'язково"
+            <input className={modalInp} style={modalBg} type="number" min={0} placeholder="необов'язково"
               value={areaCleared} onChange={e => setAreaCleared(e.target.value)} />
           </div>
 
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Метод знешкодження *</label>
-            <select className={inp} style={bg} value={method} onChange={e => setMethod(e.target.value)}>
+            <select className={modalInp} style={modalBg} value={method} onChange={e => setMethod(e.target.value)}>
               {NEUTRALIZATION_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
 
           <div>
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Додаткові нотатки</label>
-            <textarea className={`${inp} resize-none`} style={bg} rows={3}
+            <textarea className={`${modalInp} resize-none`} style={modalBg} rows={3}
               placeholder="Опишіть особливості, труднощі, рекомендації…"
               value={notes} onChange={e => setNotes(e.target.value)} />
           </div>

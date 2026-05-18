@@ -21,11 +21,10 @@ export const PRIORITY_COLOR = {
   critical: "#f87171",
 } as const
 
-export const TERRITORY_STATUS = {
-  contaminated:      { label: "Забруднена",       color: "#f87171" },
-  under_survey:      { label: "Обстежується",     color: "#fb923c" },
-  partially_cleared: { label: "Частково очищена", color: "#facc15" },
-  cleared:           { label: "Очищена",          color: "#4ade80" },
+export const BRIGADE_STATUS_LABEL = {
+  available:   "Вільна",
+  busy:        "В роботі",
+  unavailable: "Недоступна",
 } as const
 
 export const ROLE_LABEL = {

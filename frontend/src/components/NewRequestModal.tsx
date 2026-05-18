@@ -1,52 +1,26 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react"
+import { memo, useCallback, useRef, useState } from "react"
 import { createRequest, uploadPhoto } from "../api/requests"
 import { useToast } from "../context/ToastContext"
+import { useGeocoding, buildShortName, reverseGeocode } from "../hooks/useGeocoding"
 import type { DeminingRequest, Priority } from "../types"
 import MapView from "./MapView"
+import { modalBg, modalInp } from "./ui/modalStyles"
 
 interface Props { onClose: () => void; onCreated: (r: DeminingRequest) => void }
 
 const PRIORITIES: Priority[] = ["low", "medium", "high", "critical"]
-const PRIORITY_LABELS = { low: "🟢 Низький", medium: "🟡 Середній", high: "🟠 Високий", critical: "🔴 Критичний" }
+const PRIORITY_LABELS: Record<Priority, string> = {
+  low: "🟢 Низький", medium: "🟡 Середній", high: "🟠 Високий", critical: "🔴 Критичний",
+}
 const ALLOWED   = ["image/jpeg", "image/png"]
 const MAX_BYTES = 5 * 1024 * 1024
 
-const inp = "w-full rounded-xl border border-white/8 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/50 transition"
-const bg  = { background: "rgba(255,255,255,0.04)" }
-
-interface NominatimResult {
-  place_id: number; display_name: string; lat: string; lon: string
-  address?: { city?: string; town?: string; village?: string; suburb?: string
-               road?: string; house_number?: string; state?: string
-               pedestrian?: string; footway?: string }
-}
-
-function shortName(r: NominatimResult): string {
-  const a  = r.address ?? {} as any
-  const road        = a.road ?? a.pedestrian ?? a.footway ?? ""
-  const houseNumber = a.house_number ?? ""
-  const city        = a.city ?? a.town ?? a.village ?? a.suburb ?? ""
-  const state       = a.state ?? ""
-  if (road && houseNumber && city) return `${road}, ${houseNumber}, ${city}`
-  if (road && city)                return `${road}, ${city}`
-  if (city && state)               return `${city}, ${state}`
-  return r.display_name.split(",").slice(0, 3).join(",").trim()
-}
-
-function useDebounce<T>(value: T, ms: number): T {
-  const [dv, setDv] = useState(value)
-  useEffect(() => { const t = setTimeout(() => setDv(value), ms); return () => clearTimeout(t) }, [value, ms])
-  return dv
-}
-
-// Валідація українського телефону
 function validatePhone(p: string): boolean {
   return /^(\+?38)?0\d{9}$/.test(p.replace(/[\s\-()]/g, ""))
 }
 
 export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
   const toast = useToast()
-  const justSelectedRef = useRef(false)
 
   const [title,       setTitle]       = useState("")
   const [description, setDescription] = useState("")
@@ -58,54 +32,40 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const [addressQuery,    setAddressQuery]    = useState("")
-  const [suggestions,     setSuggestions]     = useState<NominatimResult[]>([])
-  const [searching,       setSearching]       = useState(false)
-  const [selectedPlace,   setSelectedPlace]   = useState<{ name: string; lat: number; lng: number } | null>(null)
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [showMap,         setShowMap]         = useState(false)
-  const [coords,          setCoords]          = useState<{ lat: number; lng: number } | null>(null)
+  const [addressQuery,  setAddressQuery]  = useState("")
+  const [selectedPlace, setSelectedPlace] = useState<{ name: string; lat: number; lng: number } | null>(null)
+  const [showMap,       setShowMap]       = useState(false)
+  const [coords,        setCoords]        = useState<{ lat: number; lng: number } | null>(null)
 
-  const debouncedQuery = useDebounce(addressQuery, 400)
+  // Пошук адрес через Nominatim (дебаунс + запит всередині хука)
+  const skipNextQueryRef = useRef(false)
+  const adjustedQuery    = skipNextQueryRef.current ? "" : addressQuery
+  const { suggestions, searching, showSuggestions, setShowSuggestions, clearSuggestions } =
+    useGeocoding(adjustedQuery)
 
-  useEffect(() => {
-    if (justSelectedRef.current) { justSelectedRef.current = false; return }
-    if (debouncedQuery.length < 3) { setSuggestions([]); return }
-    setSearching(true)
-    fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(debouncedQuery)}&format=json&addressdetails=1&countrycodes=ua&limit=6`,
-      { headers: { "Accept-Language": "uk" } }
-    )
-      .then(r => r.json())
-      .then((data: NominatimResult[]) => { setSuggestions(data); setShowSuggestions(true) })
-      .catch(() => setSuggestions([]))
-      .finally(() => setSearching(false))
-  }, [debouncedQuery])
-
-  const selectSuggestion = (s: NominatimResult) => {
-    const lat = parseFloat(s.lat), lng = parseFloat(s.lon)
-    const name = shortName(s)
-    justSelectedRef.current = true
+  const selectSuggestion = (s: typeof suggestions[number]) => {
+    const lat  = parseFloat(s.lat)
+    const lng  = parseFloat(s.lon)
+    const name = buildShortName(s)
+    skipNextQueryRef.current = true
     setSelectedPlace({ name, lat, lng })
     setCoords({ lat, lng })
     setAddressQuery(name)
-    setSuggestions([])
-    setShowSuggestions(false)
+    clearSuggestions()
   }
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     setCoords({ lat, lng })
     try {
-      const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, { headers: { "Accept-Language": "uk" } })
-      const data: NominatimResult = await res.json()
-      const name = shortName(data)
+      const name = await reverseGeocode(lat, lng)
       setSelectedPlace({ name, lat, lng })
-      justSelectedRef.current = true
+      skipNextQueryRef.current = true
       setAddressQuery(name)
     } catch {
-      setSelectedPlace({ name: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng })
-      justSelectedRef.current = true
-      setAddressQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+      const fallback = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+      setSelectedPlace({ name: fallback, lat, lng })
+      skipNextQueryRef.current = true
+      setAddressQuery(fallback)
     }
     setShowMap(false)
   }, [])
@@ -156,9 +116,9 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
         </div>
 
         <div className="overflow-y-auto p-6 flex flex-col gap-3">
-          <input className={inp} style={bg} placeholder="Назва*" value={title} onChange={e => setTitle(e.target.value)} />
-          <textarea className={`${inp} resize-none`} style={bg} placeholder="Опис ситуації" rows={2} value={description} onChange={e => setDescription(e.target.value)} />
-          <select className={inp} style={bg} value={priority} onChange={e => setPriority(e.target.value as Priority)}>
+          <input className={modalInp} style={modalBg} placeholder="Назва*" value={title} onChange={e => setTitle(e.target.value)} />
+          <textarea className={`${modalInp} resize-none`} style={modalBg} placeholder="Опис ситуації" rows={2} value={description} onChange={e => setDescription(e.target.value)} />
+          <select className={modalInp} style={modalBg} value={priority} onChange={e => setPriority(e.target.value as Priority)}>
             {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
           </select>
 
@@ -167,7 +127,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
             <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-1.5">
               Контактний телефон <span className="normal-case text-slate-700">(необов'язково)</span>
             </label>
-            <input className={inp} style={bg} placeholder="+38 (067) 123-45-67"
+            <input className={modalInp} style={modalBg} placeholder="+38 (067) 123-45-67"
               value={phone} onChange={e => setPhone(e.target.value)} type="tel" />
           </div>
 
@@ -177,10 +137,10 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
               Місце знаходження *
             </label>
             <div className="relative">
-              <input className={inp} style={bg}
+              <input className={modalInp} style={modalBg}
                 placeholder="Введіть населений пункт або вулицю…"
                 value={addressQuery}
-                onChange={e => { setAddressQuery(e.target.value); setSelectedPlace(null) }}
+                onChange={e => { skipNextQueryRef.current = false; setAddressQuery(e.target.value); setSelectedPlace(null) }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 autoComplete="off"
@@ -193,7 +153,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
                   <button key={s.place_id} type="button"
                     className="w-full text-left px-3 py-2.5 text-xs hover:bg-white/5 transition border-b border-white/5 last:border-0"
                     onMouseDown={() => selectSuggestion(s)}>
-                    <p className="text-white font-semibold truncate">{shortName(s)}</p>
+                    <p className="text-white font-semibold truncate">{buildShortName(s)}</p>
                     <p className="text-slate-500 truncate mt-0.5">{s.display_name}</p>
                   </button>
                 ))}
@@ -215,7 +175,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
           </button>
 
           <button type="button" onClick={() => fileRef.current?.click()}
-            className="flex items-center justify-center gap-2 py-2.5 text-sm rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition" style={bg}>
+            className="flex items-center justify-center gap-2 py-2.5 text-sm rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition" style={modalBg}>
             📷 {photo ? photo.name : "Додати фото (необов'язково)"}
           </button>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleFile} />

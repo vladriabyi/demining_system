@@ -9,8 +9,10 @@ from app.models.request import (
     RequestStatusHistory, VALID_TRANSITIONS
 )
 from app.models.user import User, UserRole
-from app.models.brigade import Brigade
+from app.models.brigade import Brigade, BrigadeStatus
 from app.schemas.request import RequestCreate, RequestUpdate
+from app.core.telegram import notify_request_updated
+from app.core.email import send_status_change_email, send_completion_report_email
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +83,38 @@ async def _log_status_change(
     db.add(entry)
 
 
+async def _sync_brigade_status(
+    db: AsyncSession,
+    old_brigade_id: Optional[int],
+    new_brigade_id: Optional[int],
+) -> None:
+    """
+    Синхронізує статус бригад при зміні призначення заявки:
+      - нова бригада → BrigadeStatus.busy (якщо була available)
+      - стара бригада → BrigadeStatus.available (якщо немає інших активних заявок)
+    """
+    if new_brigade_id and new_brigade_id != old_brigade_id:
+        new_b = await db.get(Brigade, new_brigade_id)
+        if new_b and new_b.status == BrigadeStatus.available:
+            new_b.status = BrigadeStatus.busy
+
+    if old_brigade_id and old_brigade_id != new_brigade_id:
+        old_b = await db.get(Brigade, old_brigade_id)
+        if old_b and old_b.status == BrigadeStatus.busy:
+            active_statuses = {
+                RequestStatus.pending, RequestStatus.under_review,
+                RequestStatus.approved, RequestStatus.in_progress,
+            }
+            other_active = await db.execute(
+                select(func.count(DeminingRequest.id)).where(
+                    DeminingRequest.brigade_id == old_brigade_id,
+                    DeminingRequest.status.in_(active_statuses),
+                )
+            )
+            if (other_active.scalar() or 0) == 0:
+                old_b.status = BrigadeStatus.available
+
+
 # ─── CRUD operations ──────────────────────────────────────────────────────────
 
 async def get_all(db: AsyncSession, current_user: User) -> List[DeminingRequest]:
@@ -148,6 +182,10 @@ async def update(
     if "assigned_to_id" in changes and changes["assigned_to_id"] is not None:
         await _validate_assignee(db, changes["assigned_to_id"])
 
+    # Автоматичне оновлення статусу бригад при зміні призначення
+    if "brigade_id" in changes:
+        await _sync_brigade_status(db, old_brigade_id=req.brigade_id, new_brigade_id=changes["brigade_id"])
+
     should_notify = "assigned_to_id" in changes or "status" in changes or "brigade_id" in changes
 
     for k, v in changes.items():
@@ -158,7 +196,6 @@ async def update(
     refreshed = await get_by_id(db, req.id)
 
     if should_notify and refreshed:
-        from app.core.telegram import notify_request_updated
         assignee_name = refreshed.assignee.full_name if refreshed.assignee else None
         brigade_name  = refreshed.brigade.name       if refreshed.brigade  else None
         await notify_request_updated(
@@ -169,10 +206,8 @@ async def update(
             brigade_name=brigade_name,
             status=refreshed.status.value,
         )
-        # Email до заявника при зміні статусу
         if "status" in changes and refreshed.requester:
             try:
-                from app.core.email import send_status_change_email
                 await send_status_change_email(
                     to=refreshed.requester.email,
                     to_name=refreshed.requester.full_name,
@@ -208,8 +243,6 @@ async def force_complete(
 
     refreshed = await get_by_id(db, req.id)
     if refreshed:
-        from app.core.telegram import notify_request_updated
-        from app.core.email import send_completion_report_email
         assignee_name = refreshed.assignee.full_name if refreshed.assignee else None
         brigade_name  = refreshed.brigade.name       if refreshed.brigade  else None
         await notify_request_updated(
