@@ -3,12 +3,6 @@ from typing import Optional
 from app.models.user import UserRole
 
 
-class UserCreate(BaseModel):
-    email: EmailStr
-    full_name: str
-    password: str
-
-
 class UserRegister(BaseModel):
     email:     EmailStr
     full_name: str

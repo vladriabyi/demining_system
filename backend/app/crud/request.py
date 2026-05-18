@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 
 from app.models.request import (
-    DeminingRequest, RequestStatus, Priority,
+    DeminingRequest, RequestStatus,
     RequestStatusHistory, VALID_TRANSITIONS
 )
 from app.models.user import User, UserRole
@@ -104,7 +104,6 @@ async def create(
     req = DeminingRequest(
         **data.model_dump(),
         requester_id=requester_id,
-        priority=Priority.medium,           # пріоритет завжди medium при створенні
         location=_make_point_wkt(data.longitude, data.latitude),
     )
     db.add(req)
@@ -195,7 +194,7 @@ async def force_complete(
     comment: str = "Завершальний звіт подано сапером",
 ) -> "DeminingRequest":
     """Примусово завершує заявку (для звіту сапера), оминаючи стандартну перевірку переходів."""
-    old_status = req.status  # зберігаємо enum, не str
+    old_status = req.status
     req.status = RequestStatus.completed
     await db.commit()
 

@@ -6,9 +6,13 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.endpoints import auth, users, requests, brigades, reports
 from app.db.database import engine, Base
 from app.models import user, request, brigade, report  # noqa: F401
+from app.schemas.request import _rebuild_request_out
 
 UPLOAD_DIR = "/app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Розв'язуємо forward reference RequestOut → ReportOut
+_rebuild_request_out()
 
 
 @asynccontextmanager

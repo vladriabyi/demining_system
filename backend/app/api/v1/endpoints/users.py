@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import List
 
 from app.db.database import get_db
@@ -22,7 +21,7 @@ async def get_users(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_coordinator),
 ):
-    return await crud_user.get_all(db)
+    return await crud_user.get_all(db, include_inactive=True)
 
 
 @router.patch("/{user_id}", response_model=UserOut)
@@ -32,16 +31,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user = await crud_user.update(db, user_id, data)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if data.role is not None:
-        user.role = data.role
-    if data.is_active is not None:
-        user.is_active = data.is_active
-
-    await db.commit()
-    await db.refresh(user)
+        raise HTTPException(status_code=404, detail="Користувача не знайдено")
     return user

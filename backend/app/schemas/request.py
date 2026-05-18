@@ -1,13 +1,18 @@
+from __future__ import annotations
 from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from app.models.request import RequestStatus, Priority, ExplosiveType
 from app.schemas.user import UserOut
+
+if TYPE_CHECKING:
+    from app.schemas.report import ReportOut
 
 
 class RequestCreate(BaseModel):
     title:          str
     description:    Optional[str]         = None
+    priority:       Priority              = Priority.medium
     explosive_type: ExplosiveType         = ExplosiveType.unknown
     location_name:  str
     latitude:       float
@@ -64,25 +69,26 @@ class NearbyRequestOut(BaseModel):
 
 
 class RequestOut(BaseModel):
-    id:             int
-    title:          str
-    description:    Optional[str]
-    status:         RequestStatus
-    priority:       Priority
-    explosive_type: ExplosiveType
-    location_name:  str
-    latitude:       float
-    longitude:      float
-    photo_path:     Optional[str]  = None
-    requester_id:   int
-    assigned_to_id: Optional[int]
-    brigade_id:     Optional[int]  = None
-    created_at:     datetime
-    updated_at:     datetime
-    phone:          Optional[str]                    = None
-    requester:      Optional[UserOut]                = None
-    assignee:       Optional[UserOut]                = None
-    status_history: Optional[List[StatusHistoryOut]] = None
+    id:                 int
+    title:              str
+    description:        Optional[str]
+    status:             RequestStatus
+    priority:           Priority
+    explosive_type:     ExplosiveType
+    location_name:      str
+    latitude:           float
+    longitude:          float
+    photo_path:         Optional[str]                    = None
+    requester_id:       int
+    assigned_to_id:     Optional[int]
+    brigade_id:         Optional[int]                    = None
+    created_at:         datetime
+    updated_at:         datetime
+    phone:              Optional[str]                    = None
+    requester:          Optional[UserOut]                = None
+    assignee:           Optional[UserOut]                = None
+    status_history:     Optional[List[StatusHistoryOut]] = None
+    completion_report:  Optional["ReportOut"]            = None
 
     model_config = {"from_attributes": True}
 
@@ -94,3 +100,9 @@ class DashboardStatsOut(BaseModel):
     completed_requests:   int
     critical_requests:    int
     total_brigades:       int  # замінено total_territories → total_brigades
+
+
+# Розв'язуємо forward reference на ReportOut після завантаження обох модулів
+def _rebuild_request_out() -> None:
+    from app.schemas.report import ReportOut  # noqa: F401 — потрібен для model_rebuild
+    RequestOut.model_rebuild()
