@@ -7,8 +7,8 @@ from app.crud import request as crud_req
 from app.crud import brigade as crud_brigade
 from app.models.brigade import BrigadeStatus
 from app.schemas.brigade import BrigadeUpdate
-from app.api.v1.dependencies import get_current_user, require_coordinator
-from app.models.user import User, UserRole
+from app.api.v1.dependencies import get_current_user, require_staff
+from app.models.user import User
 from app.models.request import RequestStatus
 
 router = APIRouter(prefix="/requests", tags=["reports"])
@@ -16,19 +16,13 @@ router = APIRouter(prefix="/requests", tags=["reports"])
 ACTIVE = {RequestStatus.pending, RequestStatus.under_review, RequestStatus.approved, RequestStatus.in_progress}
 
 
-def _is_staff(user: User) -> bool:
-    return user.role in (UserRole.operator, UserRole.coordinator, UserRole.admin)
-
-
 @router.post("/{rid}/report", response_model=ReportOut, status_code=201)
 async def submit_report(
     rid: int,
     data: ReportCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_staff),
 ):
-    if not _is_staff(current_user):
-        raise HTTPException(403, "Тільки оператори та координатори можуть подавати звіт")
 
     req = await crud_req.get_by_id(db, rid)
     if not req:

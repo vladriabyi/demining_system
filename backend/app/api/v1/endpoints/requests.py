@@ -13,7 +13,7 @@ from app.schemas.request import (
     NearbyRequestOut,
 )
 from app.crud import request as crud
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user, require_staff
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -22,10 +22,6 @@ UPLOAD_DIR       = "/app/uploads"
 ALLOWED_TYPES    = {"image/jpeg", "image/png"}
 MAX_FILE_SIZE    = 5 * 1024 * 1024   # 5 MB
 DUPLICATE_RADIUS = 200               # метрів — поріг виявлення дублікатів
-
-
-def _is_staff(user: User) -> bool:
-    return user.role in (UserRole.coordinator, UserRole.admin, UserRole.operator)
 
 
 # ─── List & stats ─────────────────────────────────────────────────────────────
@@ -79,7 +75,8 @@ async def get_request(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
-    if not _is_staff(current_user) and req.requester_id != current_user.id:
+    # Цивільний бачить лише свої заявки
+    if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     return req
 
@@ -103,9 +100,9 @@ async def update_request(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
-    if not _is_staff(current_user) and req.requester_id != current_user.id:
+    if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
-    if not _is_staff(current_user) and req.status != "pending":
+    if current_user.role == UserRole.civilian and req.status != "pending":
         raise HTTPException(403, "Редагування можливе лише у статусі «pending»")
     return await crud.update(db, req, data, current_user.id)
 
@@ -120,7 +117,7 @@ async def upload_photo(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
-    if not _is_staff(current_user) and req.requester_id != current_user.id:
+    if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(400, "Дозволено лише JPEG та PNG")
@@ -147,6 +144,6 @@ async def delete_request(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
-    if not _is_staff(current_user) and req.requester_id != current_user.id:
+    if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     await crud.delete(db, req)

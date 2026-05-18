@@ -195,7 +195,7 @@ async def force_complete(
     comment: str = "Завершальний звіт подано сапером",
 ) -> "DeminingRequest":
     """Примусово завершує заявку (для звіту сапера), оминаючи стандартну перевірку переходів."""
-    old_status = req.status.value
+    old_status = req.status  # зберігаємо enum, не str
     req.status = RequestStatus.completed
     await db.commit()
 

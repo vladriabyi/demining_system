@@ -23,13 +23,22 @@ async def get_current_user(
     return user
 
 
+async def require_staff(user: User = Depends(get_current_user)) -> User:
+    """Оператор, координатор або адмін. Цивільний доступу не має."""
+    if user.role == UserRole.civilian:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Staff access required")
+    return user
+
+
 async def require_coordinator(user: User = Depends(get_current_user)) -> User:
+    """Координатор або адмін."""
     if user.role not in (UserRole.coordinator, UserRole.admin):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Coordinator role required")
     return user
 
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Тільки адмін."""
     if user.role != UserRole.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
     return user
