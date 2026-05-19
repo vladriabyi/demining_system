@@ -15,6 +15,7 @@ from app.schemas.request import (
 from app.crud import request as crud
 from app.api.v1.dependencies import get_current_user, require_staff
 from app.models.user import User, UserRole
+from app.models.request import Priority
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -36,10 +37,10 @@ async def list_requests(
 
 @router.get("/stats", response_model=DashboardStatsOut)
 async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db),
-    _:  User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
 ):
-    return await crud.get_dashboard_stats(db)
+    return await crud.get_dashboard_stats(db, current_user)
 
 
 # ─── PostGIS: пошук заявок поблизу (виявлення дублікатів) ───────────────────
@@ -75,8 +76,9 @@ async def get_request(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
-    # Цивільний бачить лише свої заявки
     if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
+        raise HTTPException(403, "Доступ заборонено")
+    if current_user.role == UserRole.operator and req.assigned_to_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     return req
 
@@ -87,6 +89,10 @@ async def create_request(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
+    if current_user.role == UserRole.operator:
+        raise HTTPException(403, "Оператор не може створювати заявки")
+    if current_user.role not in (UserRole.coordinator, UserRole.admin):
+        data = data.model_copy(update={"priority": Priority.medium})
     return await crud.create(db, data, current_user.id)
 
 
@@ -102,8 +108,19 @@ async def update_request(
         raise HTTPException(404, "Заявку не знайдено")
     if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
+    if current_user.role == UserRole.operator and req.assigned_to_id != current_user.id:
+        raise HTTPException(403, "Доступ заборонено")
     if current_user.role == UserRole.civilian and req.status != "pending":
         raise HTTPException(403, "Редагування можливе лише у статусі «pending»")
+    if current_user.role == UserRole.civilian:
+        payload = data.model_dump(exclude_unset=True)
+        for key in ("priority", "status", "assigned_to_id", "brigade_id"):
+            payload.pop(key, None)
+        data = RequestUpdate(**payload)
+    elif current_user.role == UserRole.operator:
+        payload = data.model_dump(exclude_unset=True)
+        payload.pop("priority", None)
+        data = RequestUpdate(**payload)
     return await crud.update(db, req, data, current_user.id)
 
 
@@ -118,6 +135,8 @@ async def upload_photo(
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
     if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
+        raise HTTPException(403, "Доступ заборонено")
+    if current_user.role == UserRole.operator and req.assigned_to_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(400, "Дозволено лише JPEG та PNG")
@@ -144,6 +163,8 @@ async def delete_request(
     req = await crud.get_by_id(db, rid)
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
+    if current_user.role == UserRole.operator:
+        raise HTTPException(403, "Оператор не може видаляти заявки")
     if current_user.role == UserRole.civilian and req.requester_id != current_user.id:
         raise HTTPException(403, "Доступ заборонено")
     await crud.delete(db, req)

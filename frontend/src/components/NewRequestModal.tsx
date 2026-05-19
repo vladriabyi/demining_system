@@ -1,12 +1,19 @@
-import { memo, useCallback, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { createRequest, uploadPhoto } from "../api/requests"
+import { useAuth } from "../context/AuthContext"
 import { useToast } from "../context/ToastContext"
 import { useGeocoding, buildShortName, reverseGeocode } from "../hooks/useGeocoding"
 import type { DeminingRequest, Priority } from "../types"
 import MapView from "./MapView"
 import { modalBg, modalInp } from "./ui/modalStyles"
 
-interface Props { onClose: () => void; onCreated: (r: DeminingRequest) => void }
+interface Props {
+  onClose: () => void
+  onCreated: (r: DeminingRequest) => void
+  /** Координати з кліку на головній карті — підставляються в форму */
+  initialCoords?: { lat: number; lng: number } | null
+}
 
 const PRIORITIES: Priority[] = ["low", "medium", "high", "critical"]
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -19,8 +26,10 @@ function validatePhone(p: string): boolean {
   return /^(\+?38)?0\d{9}$/.test(p.replace(/[\s\-()]/g, ""))
 }
 
-export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
+export default memo(function NewRequestModal({ onClose, onCreated, initialCoords }: Props) {
   const toast = useToast()
+  const { user } = useAuth()
+  const canSetPriority = user?.role === "coordinator" || user?.role === "admin"
 
   const [title,       setTitle]       = useState("")
   const [description, setDescription] = useState("")
@@ -53,6 +62,28 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
     setAddressQuery(name)
     clearSuggestions()
   }
+
+  useEffect(() => {
+    if (!initialCoords) return
+    let cancelled = false
+    const { lat, lng } = initialCoords
+    setCoords({ lat, lng })
+    reverseGeocode(lat, lng)
+      .then(name => {
+        if (cancelled) return
+        setSelectedPlace({ name, lat, lng })
+        skipNextQueryRef.current = true
+        setAddressQuery(name)
+      })
+      .catch(() => {
+        if (cancelled) return
+        const fallback = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+        setSelectedPlace({ name: fallback, lat, lng })
+        skipNextQueryRef.current = true
+        setAddressQuery(fallback)
+      })
+    return () => { cancelled = true }
+  }, [initialCoords])
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     setCoords({ lat, lng })
@@ -88,7 +119,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
       let created = await createRequest({
         title:         title.trim(),
         description:   description.trim() || undefined,
-        priority,
+        ...(canSetPriority ? { priority } : {}),
         location_name: selectedPlace.name,
         latitude:      selectedPlace.lat,
         longitude:     selectedPlace.lng,
@@ -104,8 +135,8 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
     finally  { setLoading(false) }
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[2000] p-4">
       <div className="w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] rounded-2xl border border-white/8" style={{ background: "#0c1220" }}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/6 shrink-0">
           <div>
@@ -118,9 +149,15 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
         <div className="overflow-y-auto p-6 flex flex-col gap-3">
           <input className={modalInp} style={modalBg} placeholder="Назва*" value={title} onChange={e => setTitle(e.target.value)} />
           <textarea className={`${modalInp} resize-none`} style={modalBg} placeholder="Опис ситуації" rows={2} value={description} onChange={e => setDescription(e.target.value)} />
-          <select className={modalInp} style={modalBg} value={priority} onChange={e => setPriority(e.target.value as Priority)}>
-            {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
-          </select>
+
+          {canSetPriority && (
+            <div>
+              <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-1.5">Пріоритет</label>
+              <select className={modalInp} style={modalBg} value={priority} onChange={e => setPriority(e.target.value as Priority)}>
+                {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Телефон */}
           <div>
@@ -199,7 +236,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
       </div>
 
       {showMap && (
-        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowMap(false)}>
+        <div className="fixed inset-0 z-[2100] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowMap(false)}>
           <div className="w-full max-w-2xl h-[70vh] flex flex-col rounded-2xl overflow-hidden border border-white/8" style={{ background: "#0c1220" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/6">
               <p className="text-sm font-semibold text-white">Клікніть на карті щоб обрати місце</p>
@@ -209,6 +246,7 @@ export default memo(function NewRequestModal({ onClose, onCreated }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 })

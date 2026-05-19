@@ -1,12 +1,9 @@
-from __future__ import annotations
-from pydantic import BaseModel, field_validator
-from typing import Optional, List, TYPE_CHECKING
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List
 from datetime import datetime
 from app.models.request import RequestStatus, Priority, ExplosiveType
 from app.schemas.user import UserOut
-
-if TYPE_CHECKING:
-    from app.schemas.report import ReportOut
+from app.schemas.report import ReportOut  # пряме підключення — кругового імпорту немає
 
 
 class RequestCreate(BaseModel):
@@ -52,8 +49,9 @@ class StatusHistoryOut(BaseModel):
     changed_by: int
     comment:    Optional[str]
     changed_at: datetime
+    changer:    Optional[UserOut] = Field(default=None, validation_alias="changed_by_user")
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class NearbyRequestOut(BaseModel):
@@ -88,7 +86,7 @@ class RequestOut(BaseModel):
     requester:          Optional[UserOut]                = None
     assignee:           Optional[UserOut]                = None
     status_history:     Optional[List[StatusHistoryOut]] = None
-    completion_report:  Optional["ReportOut"]            = None
+    completion_report:  Optional[ReportOut]              = None
 
     model_config = {"from_attributes": True}
 
@@ -100,9 +98,3 @@ class DashboardStatsOut(BaseModel):
     completed_requests:   int
     critical_requests:    int
     total_brigades:       int  # замінено total_territories → total_brigades
-
-
-# Розв'язуємо forward reference на ReportOut після завантаження обох модулів
-def _rebuild_request_out() -> None:
-    from app.schemas.report import ReportOut  # noqa: F401 — потрібен для model_rebuild
-    RequestOut.model_rebuild()

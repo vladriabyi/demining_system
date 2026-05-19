@@ -6,7 +6,7 @@ import { ROLE_LABEL } from "./constants"
 const BASE_NAV = [
   { to: "/",         label: "Карта",   icon: "▦", roles: null },
   { to: "/requests", label: "Заявки",  icon: "≡", roles: null },
-  { to: "/brigades", label: "Бригади", icon: "🪖", roles: ["operator", "coordinator", "admin"] },
+  { to: "/brigades", label: "Бригади", icon: "🪖", roles: ["coordinator", "admin"] },
 ]
 
 export default memo(function Layout() {

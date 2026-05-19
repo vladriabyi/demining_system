@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react"
+
 /**
  * Спільні стилі для модальних вікон.
  * Використовуються в AdminRequestModal, CompletionReportModal, NewRequestModal.
@@ -9,7 +11,7 @@ export const modalInp =
   "placeholder-slate-600 focus:outline-none focus:border-amber-500/50 transition"
 
 /** Inline-стиль для напівпрозорого темного фону елементів форми. */
-export const modalBg: React.CSSProperties = {
+export const modalBg: CSSProperties = {
   background: "rgba(255,255,255,0.04)",
 }
 

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     SECRET_KEY:                 str
     ALGORITHM:                  str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    VERIFICATION_TOKEN_EXPIRE_MINUTES: int = 30
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None

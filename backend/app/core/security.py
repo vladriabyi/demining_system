@@ -1,3 +1,4 @@
+import hashlib
 import bcrypt
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
@@ -17,6 +18,10 @@ def create_access_token(subject: str | int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(subject), "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def hash_verification_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_token(token: str) -> dict:

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from app.models.user import UserRole
 
@@ -6,7 +6,7 @@ from app.models.user import UserRole
 class UserRegister(BaseModel):
     email:     EmailStr
     full_name: str
-    password:  str
+    password:  str = Field(min_length=8)
 
 
 class UserOut(BaseModel):

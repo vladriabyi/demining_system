@@ -42,6 +42,7 @@ export interface StatusHistoryEntry {
   changed_by: number
   comment:    string | null
   changed_at: string
+  changer?:   User | null
 }
 
 export interface DeminingRequest {

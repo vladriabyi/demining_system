@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { getRequests, deleteRequest } from "../api/requests"
+import { useAuth } from "../context/AuthContext"
 import { useToast } from "../context/ToastContext"
+import { canCreateRequest, canDeleteRequest, isOperator } from "../utils/roles"
 import type { DeminingRequest, Priority, RequestStatus } from "../types"
 import RequestDetailModal from "../components/RequestDetailModal"
 import NewRequestModal from "../components/NewRequestModal"
@@ -61,7 +63,11 @@ function SortTh({ label, field, sort, onSort }: {
 
 export default function RequestsPage() {
   const location = useLocation()
+  const { user } = useAuth()
   const toast    = useToast()
+  const operator = isOperator(user?.role)
+  const showCreate = canCreateRequest(user?.role)
+  const showDelete = canDeleteRequest(user?.role)
 
   const [requests,       setRequests]      = useState<DeminingRequest[]>([])
   const [loading,        setLoading]       = useState(true)
@@ -126,13 +132,17 @@ export default function RequestsPage() {
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-widest">Управління</p>
           <h1 className="text-xl font-extrabold text-white mt-0.5">Заявки</h1>
-          <p className="text-xs text-slate-600 mt-0.5">{filtered.length} з {requests.length} показано</p>
+          <p className="text-xs text-slate-600 mt-0.5">
+            {operator ? "Призначені вам заявки" : `${filtered.length} з ${requests.length} показано`}
+          </p>
         </div>
-        <button onClick={() => setShowNew(true)}
-          className="px-4 py-2.5 text-sm font-bold text-slate-900 rounded-xl transition"
-          style={{ background: "#fbbf24" }}>
-          + Нова заявка
-        </button>
+        {showCreate && (
+          <button onClick={() => setShowNew(true)}
+            className="px-4 py-2.5 text-sm font-bold text-slate-900 rounded-xl transition"
+            style={{ background: "#fbbf24" }}>
+            + Нова заявка
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -159,7 +169,7 @@ export default function RequestsPage() {
           : filtered.length === 0
             ? <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2">
                 <span className="text-4xl">📭</span>
-                <p className="text-sm">Заявок не знайдено</p>
+                <p className="text-sm">{operator ? "Вам ще не призначено заявок" : "Заявок не знайдено"}</p>
               </div>
             : (
               <table className="w-full text-sm">
@@ -171,7 +181,7 @@ export default function RequestsPage() {
                     <SortTh label="Статус"    field="status"        {...sortProps} />
                     <SortTh label="Пріоритет" field="priority"      {...sortProps} />
                     <SortTh label="Дата"      field="created_at"    {...sortProps} />
-                    <th className="px-4 py-3" />
+                    {showDelete && <th className="px-4 py-3" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -187,6 +197,7 @@ export default function RequestsPage() {
                       <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                       <td className="px-4 py-3"><PriorityBadge priority={r.priority} /></td>
                       <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap font-mono">{fmt(r.created_at)}</td>
+                      {showDelete && (
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <button
                           disabled={deleting === r.id}
@@ -196,6 +207,7 @@ export default function RequestsPage() {
                           {deleting === r.id ? "…" : "🗑"}
                         </button>
                       </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -204,7 +216,17 @@ export default function RequestsPage() {
         }
       </div>
 
-      {viewing && <RequestDetailModal request={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <RequestDetailModal
+          request={viewing}
+          onClose={() => setViewing(null)}
+          onStatusChanged={async () => {
+            const fresh = await getRequests()
+            setRequests(fresh)
+            setViewing(null)
+          }}
+        />
+      )}
       {showNew  && (
         <NewRequestModal
           onClose={() => setShowNew(false)}

@@ -84,12 +84,12 @@ UA_LOCATIONS = [
 ]
 
 BRIGADES_DATA = [
-    ("Харківська бригада",  "БР-01", BrigadeStatus.busy,        "Протипіхотні міни, касетні боєприпаси"),
-    ("Донецька бригада",    "БР-02", BrigadeStatus.busy,        "Артилерійські снаряди, ВНП"),
-    ("Херсонська бригада",  "БР-03", BrigadeStatus.available,   "Протитанкові міни, інженерні загородження"),
-    ("Запорізька бригада",  "БР-04", BrigadeStatus.available,   "Касетні боєприпаси, авіабомби"),
-    ("Луганська бригада",   "БР-05", BrigadeStatus.busy,        "Всі типи ВНП"),
-    ("Київська бригада",    "БР-06", BrigadeStatus.unavailable, "Протипіхотні міни, міни-пастки"),
+    ("Бригада 1", "БР-01", BrigadeStatus.busy,        "Протипіхотні міни, касетні боєприпаси"),
+    ("Бригада 2", "БР-02", BrigadeStatus.busy,        "Артилерійські снаряди, ВНП"),
+    ("Бригада 3", "БР-03", BrigadeStatus.available,   "Протитанкові міни, інженерні загородження"),
+    ("Бригада 4", "БР-04", BrigadeStatus.available,   "Касетні боєприпаси, авіабомби"),
+    ("Бригада 5", "БР-05", BrigadeStatus.busy,        "Всі типи ВНП"),
+    ("Бригада 6", "БР-06", BrigadeStatus.unavailable, "Протипіхотні міни, міни-пастки"),
 ]
 
 REQUEST_TITLES = [
@@ -155,7 +155,7 @@ async def seed():
         base_user_objs = []
         for email, full_name, role in BASE_USERS:
             u = User(email=email, full_name=full_name,
-                     hashed_password=PASSWORD_HASH, role=role, is_active=True, is_verified=True, is_verified=True)
+                     hashed_password=PASSWORD_HASH, role=role, is_active=True, is_verified=True)
             session.add(u)
             base_user_objs.append(u)
         await session.flush()
@@ -175,7 +175,7 @@ async def seed():
                     used_emails.add(email)
                     break
             u = User(email=email, full_name=f"{last} {first}",
-                     hashed_password=PASSWORD_HASH, role=role, is_active=True, is_verified=True, is_verified=True)
+                     hashed_password=PASSWORD_HASH, role=role, is_active=True, is_verified=True)
             session.add(u)
             extra_users.append(u)
         await session.flush()
@@ -205,6 +205,11 @@ async def seed():
             brigade.members = members
             session.add(brigade)
             brigades_created.append(brigade)
+
+        # Демо-оператор завжди у Бригаді 1 (для зручності тестування)
+        demo_operator = next((u for u in base_user_objs if u.email == "operator@gmail.com"), None)
+        if demo_operator and brigades_created and demo_operator not in brigades_created[0].members:
+            brigades_created[0].members.append(demo_operator)
 
         await session.flush()
 

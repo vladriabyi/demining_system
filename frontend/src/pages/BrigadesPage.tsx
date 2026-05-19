@@ -1,4 +1,6 @@
 import { useEffect, useState, memo, useMemo } from "react"
+import { Navigate } from "react-router-dom"
+import { isOperator } from "../utils/roles"
 import { getBrigades, createBrigade, updateBrigade, deleteBrigade } from "../api/brigades"
 import { getRequests, updateRequest } from "../api/requests"
 import { getUsers } from "../api/users"
@@ -60,7 +62,7 @@ const BrigadeModal = memo(function BrigadeModal({ brigade, allUsers, onClose, on
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Назва</label>
-              <input className={inp} style={ibg} value={name} onChange={e => setName(e.target.value)} />
+              <input className={inp} style={ibg} value={name} onChange={e => setName(e.target.value)} placeholder="Бригада 1" />
             </div>
             <div>
               <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">Номер</label>
@@ -247,14 +249,21 @@ export default function BrigadesPage() {
   const [filter,    setFilter]    = useState<BrigadeStatus | "all">("all")
 
   const reload = async () => {
-    const [b, u, r] = await Promise.all([getBrigades(), getUsers(), getRequests()])
-    // Сортуємо за номером бригади щоб порядок не змінювався після reload
-    setBrigades(b.sort((a, z) => a.number.localeCompare(z.number)))
-    setAllUsers(u)
-    setRequests(r)
+    try {
+      const [b, r] = await Promise.all([getBrigades(), getRequests()])
+      setBrigades(b.sort((a, z) => a.number.localeCompare(z.number)))
+      setRequests(r)
+      if (isStaff) {
+        setAllUsers(await getUsers())
+      }
+    } catch {
+      toast.error("Не вдалося завантажити бригади")
+    }
   }
 
-  useEffect(() => { reload().finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    reload().finally(() => setLoading(false))
+  }, [isStaff])
 
   const handleSaved = (b: Brigade) => {
     setBrigades(prev => prev.some(x => x.id === b.id) ? prev.map(x => x.id === b.id ? b : x) : [...prev, b])
@@ -268,6 +277,10 @@ export default function BrigadesPage() {
   }
 
   const filtered = filter === "all" ? brigades : brigades.filter(b => b.status === filter)
+
+  if (isOperator(user?.role)) {
+    return <Navigate to="/" replace />
+  }
 
   return (
     <div className="flex flex-col gap-5 h-full">

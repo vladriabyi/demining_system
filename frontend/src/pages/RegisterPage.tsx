@@ -1,14 +1,14 @@
 import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { register } from "../api/auth"
+import { Link } from "react-router-dom"
+import { register, resendVerification } from "../api/auth"
 import { useToast } from "../context/ToastContext"
+import { apiErrorMessage } from "../utils/apiError"
 
 const inp = "w-full rounded-xl border border-white/8 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/50 transition"
 const ibg = { background: "rgba(255,255,255,0.04)" }
 
 export default function RegisterPage() {
-  const toast    = useToast()
-  const navigate = useNavigate()
+  const toast = useToast()
 
   const [fullName,  setFullName]  = useState("")
   const [email,     setEmail]     = useState("")
@@ -16,6 +16,8 @@ export default function RegisterPage() {
   const [password2, setPassword2] = useState("")
   const [loading,   setLoading]   = useState(false)
   const [done,      setDone]      = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resent,    setResent]    = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,11 +29,22 @@ export default function RegisterPage() {
     try {
       await register({ full_name: fullName.trim(), email: email.trim(), password })
       setDone(true)
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail
-      toast.error(detail ?? "Помилка реєстрації")
+    } catch (err: unknown) {
+      toast.error(apiErrorMessage(err, "Помилка реєстрації"))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResend = async () => {
+    setResending(true)
+    try {
+      await resendVerification(email.trim())
+      setResent(true)
+    } catch {
+      toast.error("Не вдалось надіслати лист")
+    } finally {
+      setResending(false)
     }
   }
 
@@ -48,10 +61,18 @@ export default function RegisterPage() {
             Ми надіслали лист підтвердження на <span className="text-amber-400 font-semibold">{email}</span>.
             Натисніть посилання у листі для активації акаунта.
           </p>
-          <p className="text-xs text-slate-600">
-            Не знайшли? Перевірте папку «Спам».
+          <p className="text-xs text-slate-600 mb-4">
+            Не знайшли? Перевірте папку «Спам». Посилання дійсне 30 хвилин.
           </p>
-          <Link to="/login" className="inline-block mt-6 text-sm text-amber-400 hover:underline">
+          {resent ? (
+            <p className="text-sm text-emerald-400 mb-4">Новий лист надіслано.</p>
+          ) : (
+            <button type="button" onClick={handleResend} disabled={resending}
+              className="mb-4 w-full py-2.5 rounded-xl text-xs font-semibold text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition disabled:opacity-50">
+              {resending ? "Надсилання…" : "📬 Надіслати лист ще раз"}
+            </button>
+          )}
+          <Link to="/login" className="inline-block mt-2 text-sm text-amber-400 hover:underline">
             ← Повернутись до входу
           </Link>
         </div>

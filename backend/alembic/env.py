@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from app.core.config import settings
 from app.db.database import Base
-from app.models import user, territory, request  # noqa
+from app.models import user, request, brigade, report  # noqa: F401
 
 config = context.config
 if config.config_file_name:

@@ -1,18 +1,19 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.api.v1.endpoints import auth, users, requests, brigades, reports
 from app.db.database import engine, Base
 from app.models import user, request, brigade, report  # noqa: F401
-from app.schemas.request import _rebuild_request_out
+from app.core.rate_limit import limiter
 
 UPLOAD_DIR = "/app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Розв'язуємо forward reference RequestOut → ReportOut
-_rebuild_request_out()
 
 
 @asynccontextmanager
@@ -23,6 +24,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Demining System API", version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Забагато запитів. Спробуйте через хвилину."},
+    )
+
+
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

@@ -11,7 +11,7 @@ import type {
 export interface RequestCreate {
   title:          string
   description?:   string
-  priority:       Priority
+  priority?:      Priority
   explosive_type?: ExplosiveType
   location_name:  string
   latitude:       number

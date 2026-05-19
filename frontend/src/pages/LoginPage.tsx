@@ -1,33 +1,55 @@
 import { useState } from "react"
-import { useNavigate, Link } from "react-router-dom"
-import { login, register } from "../api/auth"
+import { flushSync } from "react-dom"
+import { Link, useNavigate } from "react-router-dom"
+import { login, resendVerification } from "../api/auth"
 import { useAuth } from "../context/AuthContext"
+import { apiErrorMessage } from "../utils/apiError"
 
 export default function LoginPage() {
   const { login: authLogin } = useAuth()
   const navigate = useNavigate()
-  const [mode, setMode]       = useState<"login" | "register">("login")
-  const [fullName, setFullName] = useState("")
-  const [email, setEmail]     = useState("")
+  const [email, setEmail]       = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError]     = useState("")
-  const [loading, setLoading] = useState(false)
+  const [error, setError]       = useState("")
+  const [loading, setLoading]   = useState(false)
+  const [info, setInfo]         = useState("")
+  const [needsVerify, setNeedsVerify] = useState(false)
+  const [resending, setResending]     = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    setInfo("")
+    setNeedsVerify(false)
     setLoading(true)
     try {
-      const res = mode === "login"
-        ? await login({ email, password })
-        : await register({ email, password, full_name: fullName })
-      authLogin(res.access_token, res.user)  // ← uses context, no reload needed
+      const res = await login({ email, password })
+      flushSync(() => authLogin(res.access_token, res.user))
       navigate("/", { replace: true })
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? "Помилка авторизації")
+      const response = (err as { response?: { status?: number; data?: { detail?: string } } })?.response
+      const detail   = response?.data?.detail
+      if (response?.status === 403 && typeof detail === "string" && detail.toLowerCase().includes("пошт")) {
+        setNeedsVerify(true)
+      }
+      setError(apiErrorMessage(err, typeof detail === "string" ? detail : "Помилка авторизації"))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResend = async () => {
+    if (!email.trim()) { setError("Введіть email"); return }
+    setResending(true)
+    setError("")
+    try {
+      await resendVerification(email.trim())
+      setInfo("Лист підтвердження надіслано. Перевірте поштову скриньку (включно зі спамом).")
+      setNeedsVerify(false)
+    } catch {
+      setError("Не вдалось надіслати лист")
+    } finally {
+      setResending(false)
     }
   }
 
@@ -43,7 +65,6 @@ export default function LoginPage() {
       }} />
 
       <div className="w-full max-w-sm relative">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center text-2xl mb-4"
             style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.2)" }}>
@@ -54,31 +75,28 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded-2xl p-6 shadow-2xl border border-white/6" style={{ background: "#0c1220" }}>
-          {/* Tab switcher */}
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl mb-5 border border-white/6" style={{ background: "rgba(255,255,255,0.03)" }}>
-            {(["login", "register"] as const).map(m => (
-              <button key={m} type="button" onClick={() => { setMode(m); setError("") }}
-                className={`py-2 text-sm font-semibold rounded-lg transition ${
-                  mode === m ? "text-slate-900" : "text-slate-500 hover:text-white"
-                }`}
-                style={mode === m ? { background: "#fbbf24" } : {}}>
-                {m === "login" ? "Увійти" : "Реєстрація"}
-              </button>
-            ))}
-          </div>
+          <h2 className="text-lg font-bold text-white mb-5 text-center">Вхід</h2>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            {mode === "register" && (
-              <input type="text" placeholder="Повне ім'я" value={fullName}
-                onChange={e => setFullName(e.target.value)} required
-                className={inp} style={ibg} />
-            )}
             <input type="email" placeholder="Email" value={email}
               onChange={e => setEmail(e.target.value)} required
               className={inp} style={ibg} />
             <input type="password" placeholder="Пароль" value={password}
               onChange={e => setPassword(e.target.value)} required
               className={inp} style={ibg} />
+
+            <div className="text-right -mt-1">
+              <Link to="/forgot-password" className="text-xs text-amber-400/80 hover:text-amber-400 hover:underline">
+                Забули пароль?
+              </Link>
+            </div>
+
+            {info && (
+              <div className="rounded-xl px-3 py-2.5 text-sm text-emerald-300 border border-emerald-500/20"
+                style={{ background: "rgba(74,222,128,0.08)" }}>
+                {info}
+              </div>
+            )}
 
             {error && (
               <div className="rounded-xl px-3 py-2.5 text-sm text-red-300 border border-red-500/20"
@@ -87,12 +105,24 @@ export default function LoginPage() {
               </div>
             )}
 
+            {needsVerify && (
+              <button type="button" onClick={handleResend} disabled={resending}
+                className="w-full py-2.5 rounded-xl text-xs font-semibold text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition disabled:opacity-50">
+                {resending ? "Надсилання…" : "📬 Надіслати лист підтвердження ще раз"}
+              </button>
+            )}
+
             <button type="submit" disabled={loading}
               className="w-full py-3 rounded-xl text-sm font-bold text-slate-900 transition mt-1 disabled:opacity-60"
               style={{ background: loading ? "#92400e" : "#fbbf24" }}>
-              {loading ? "Завантаження…" : mode === "login" ? "Увійти в систему" : "Зареєструватись"}
+              {loading ? "Завантаження…" : "Увійти в систему"}
             </button>
           </form>
+
+          <p className="text-xs text-slate-500 text-center mt-5">
+            Немає акаунта?{" "}
+            <Link to="/register" className="text-amber-400 hover:underline font-semibold">Зареєструватись</Link>
+          </p>
         </div>
       </div>
     </div>

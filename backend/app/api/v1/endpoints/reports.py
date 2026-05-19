@@ -6,7 +6,7 @@ from app.schemas.report import ReportCreate, ReportOut
 from app.crud import report as crud_report
 from app.crud import request as crud_req
 from app.api.v1.dependencies import get_current_user, require_staff
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.request import RequestStatus
 
 router = APIRouter(prefix="/requests", tags=["reports"])
@@ -25,15 +25,20 @@ async def submit_report(
     if not req:
         raise HTTPException(404, "Заявку не знайдено")
 
+    if await crud_report.get_by_request(db, rid):
+        raise HTTPException(409, "Звіт для цієї заявки вже подано. Оновіть сторінку.")
+
     if req.status not in _SUBMITTABLE_STATUSES:
+        if req.status == RequestStatus.completed:
+            raise HTTPException(409, "Заявка вже завершена. Звіт було подано раніше.")
         raise HTTPException(
             400,
             f"Звіт можна подати лише для заявки зі статусом 'В роботі' або "
             f"'Затверджено' (поточний: {req.status.value})",
         )
 
-    if await crud_report.get_by_request(db, rid):
-        raise HTTPException(409, "Звіт для цієї заявки вже існує")
+    if current_user.role == UserRole.operator and req.assigned_to_id != current_user.id:
+        raise HTTPException(403, "Звіт може подати лише призначений оператор")
 
     return await crud_report.create_with_completion(db, req, current_user.id, data)
 

@@ -1,10 +1,10 @@
 import { memo } from "react"
-import { MapContainer, TileLayer, Circle, CircleMarker, Marker, Popup, useMapEvents } from "react-leaflet"
+import { MapContainer, TileLayer, CircleMarker, Marker, Popup, useMapEvents } from "react-leaflet"
 import L from "leaflet"
 // @ts-ignore
 import "leaflet/dist/leaflet.css"
-import type { DeminingRequest, Territory } from "../types"
-import { REQUEST_STATUS, TERRITORY_STATUS, PRIORITY_LABEL } from "./constants"
+import type { DeminingRequest } from "../types"
+import { REQUEST_STATUS, PRIORITY_LABEL } from "./constants"
 
 // Fix default Leaflet icon paths
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
@@ -21,54 +21,32 @@ function ClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: number) 
 
 interface Props {
   requests?: DeminingRequest[]
-  territories?: Territory[]
   onRequestClick?: (r: DeminingRequest) => void
   onMapClick?: (lat: number, lng: number) => void
   selectedCoords?: { lat: number; lng: number } | null
-}
-
-/** Перетворює площу (км²) на радіус кола (метри) */
-function areaToRadius(area_km2?: number | null): number {
-  const area = area_km2 ?? 500
-  return Math.sqrt(area / Math.PI) * 1000
+  /** Підказка поверх карти (наприклад, для режиму вибору точки) */
+  hint?: string
 }
 
 export default memo(function MapView({
   requests = [],
-  territories = [],
   onRequestClick,
   onMapClick,
   selectedCoords,
+  hint,
 }: Props) {
   return (
+    <div className="relative h-full w-full isolate">
     <MapContainer
       center={[48.5, 32.0]} zoom={6}
       style={{ height: "100%", width: "100%", background: "#080d18" }}
+      className={onMapClick ? "cursor-crosshair" : undefined}
     >
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
       />
       <ClickHandler onMapClick={onMapClick} />
-
-      {territories.map(t => {
-        const cfg = TERRITORY_STATUS[t.status] ?? { color: "#94a3b8", label: t.status }
-        return (
-          <Circle
-            key={`t-${t.id}`}
-            center={[t.latitude, t.longitude]}
-            radius={areaToRadius(t.area_km2)}
-            pathOptions={{ color: cfg.color, fillColor: cfg.color, fillOpacity: 0.15, weight: 2, dashArray: "5 4" }}
-          >
-            <Popup>
-              <p style={{ fontWeight: 700, marginBottom: 4, color: "#f1f5f9" }}>{t.name}</p>
-              <p style={{ fontSize: 11, color: cfg.color, marginBottom: 4 }}>{cfg.label}</p>
-              {t.description && <p style={{ fontSize: 11, color: "#94a3b8" }}>{t.description}</p>}
-              {t.area_km2 != null && <p style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>📐 {t.area_km2} км²</p>}
-            </Popup>
-          </Circle>
-        )
-      })}
 
       {requests.map(r => {
         const cfg  = REQUEST_STATUS[r.status] ?? { color: "#94a3b8", label: r.status }
@@ -111,5 +89,12 @@ export default memo(function MapView({
         />
       )}
     </MapContainer>
+    {hint && (
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none px-4 py-2 rounded-xl text-xs font-semibold text-amber-200 border border-amber-500/30 shadow-lg max-w-[90%] text-center"
+        style={{ background: "rgba(12,18,32,0.92)" }}>
+        {hint}
+      </div>
+    )}
+    </div>
   )
 })

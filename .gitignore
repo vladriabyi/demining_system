@@ -3,3 +3,5 @@ node_modules/
 __pycache__/
 .env
 *.sqlite3
+*.tsbuildinfo
+uploads/

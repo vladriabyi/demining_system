@@ -58,8 +58,21 @@ async def send_verification_email(to: str, full_name: str, token: str) -> None:
 <a href="{link}" class="btn">✅ Підтвердити пошту</a>
 <p>Або скопіюйте посилання:</p>
 <p style="word-break:break-all;font-size:12px;color:#64748b">{link}</p>
-<p style="font-size:12px;color:#64748b">Посилання дійсне 24 години.</p>""")
+<p style="font-size:12px;color:#64748b">Посилання дійсне {settings.VERIFICATION_TOKEN_EXPIRE_MINUTES} хв.</p>""")
     await _send(to, "Підтвердження реєстрації — Demining System", html)
+
+
+async def send_password_reset_email(to: str, full_name: str, token: str) -> None:
+    link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    html = _base(f"""
+<h2>Скидання пароля 🔑</h2>
+<p>Вітаємо, <strong>{full_name}</strong>!</p>
+<p>Отримано запит на зміну пароля. Якщо це були не ви — проігноруйте цей лист.</p>
+<a href="{link}" class="btn">Встановити новий пароль</a>
+<p>Або скопіюйте посилання:</p>
+<p style="word-break:break-all;font-size:12px;color:#64748b">{link}</p>
+<p style="font-size:12px;color:#64748b">Посилання дійсне {settings.PASSWORD_RESET_EXPIRE_MINUTES} хв.</p>""")
+    await _send(to, "Скидання пароля — Demining System", html)
 
 
 STATUS_MAP = {

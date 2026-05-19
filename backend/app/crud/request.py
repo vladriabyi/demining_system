@@ -22,7 +22,9 @@ def _q():
     return select(DeminingRequest).options(
         selectinload(DeminingRequest.requester),
         selectinload(DeminingRequest.assignee),
-        selectinload(DeminingRequest.status_history),
+        selectinload(DeminingRequest.status_history).selectinload(
+            RequestStatusHistory.changed_by_user
+        ),
         selectinload(DeminingRequest.brigade),  # потрібно для Telegram notify
     )
 
@@ -121,6 +123,8 @@ async def get_all(db: AsyncSession, current_user: User) -> List[DeminingRequest]
     q = _q()
     if current_user.role == UserRole.civilian:
         q = q.where(DeminingRequest.requester_id == current_user.id)
+    elif current_user.role == UserRole.operator:
+        q = q.where(DeminingRequest.assigned_to_id == current_user.id)
     r = await db.execute(q.order_by(DeminingRequest.created_at.desc()))
     return list(r.scalars().all())
 
@@ -338,11 +342,33 @@ async def find_nearby(
 
 # ─── Dashboard stats (один запит замість шести) ───────────────────────────────
 
-async def get_dashboard_stats(db: AsyncSession) -> dict:
+async def get_dashboard_stats(db: AsyncSession, current_user: User) -> dict:
     """
     Оптимізована версія: один SQL-запит з умовною агрегацією
     замість шести окремих SELECT COUNT(*).
+    Оператор бачить статистику лише по своїх призначених заявках.
     """
+    if current_user.role == UserRole.operator:
+        stats_sql = text("""
+            SELECT
+                COUNT(*)                                                          AS total_requests,
+                COUNT(*) FILTER (WHERE status = 'pending')                        AS pending_requests,
+                COUNT(*) FILTER (WHERE status = 'in_progress')                    AS in_progress_requests,
+                COUNT(*) FILTER (WHERE status = 'completed')                      AS completed_requests,
+                COUNT(*) FILTER (WHERE priority = 'critical')                     AS critical_requests
+            FROM demining_requests
+            WHERE assigned_to_id = :uid
+        """)
+        row = (await db.execute(stats_sql, {"uid": current_user.id})).mappings().one()
+        return {
+            "total_requests":       int(row["total_requests"]),
+            "pending_requests":     int(row["pending_requests"]),
+            "in_progress_requests": int(row["in_progress_requests"]),
+            "completed_requests":   int(row["completed_requests"]),
+            "critical_requests":    int(row["critical_requests"]),
+            "total_brigades":       0,
+        }
+
     stats_sql = text("""
         SELECT
             COUNT(*)                                                          AS total_requests,

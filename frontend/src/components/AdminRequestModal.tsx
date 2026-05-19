@@ -6,6 +6,7 @@ import { useToast } from "../context/ToastContext"
 import type { Brigade, DeminingRequest, Priority, RequestStatus, User } from "../types"
 import { REQUEST_STATUS, PRIORITY_LABEL, BRIGADE_STATUS_LABEL } from "./constants"
 import { modalInp, modalBg } from "./ui/modalStyles"
+import StatusHistoryTimeline from "./StatusHistoryTimeline"
 
 interface Props { request: DeminingRequest; onClose: () => void; onUpdated: (r: DeminingRequest) => void }
 
@@ -97,6 +98,18 @@ export default memo(function AdminRequestModal({ request: r, onClose, onUpdated 
               ))}
             </select>
           </div>
+
+          {r.status_history && r.status_history.length > 0 && (
+            <div>
+              <label className="text-[10px] text-slate-600 uppercase tracking-widest block mb-2">
+                Історія статусів
+              </label>
+              <div className="rounded-xl border border-white/6 px-3 py-2.5 max-h-40 overflow-y-auto"
+                style={{ background: "rgba(255,255,255,0.02)" }}>
+                <StatusHistoryTimeline history={r.status_history} />
+              </div>
+            </div>
+          )}
 
           <div className="rounded-xl px-3 py-2.5 text-xs text-slate-500 space-y-1"
             style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
