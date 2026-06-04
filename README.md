@@ -134,3 +134,5 @@ UPDATE brigades SET name = 'Бригада 6' WHERE number = 'БР-06';
 ## Автор
 
 Дипломний проєкт — система управління заявками на гуманітарне розмінування.
+
+**Репозиторій:** https://github.com/vladriabyi/demining_system
